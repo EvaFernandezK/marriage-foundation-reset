@@ -1874,7 +1874,7 @@ function OnboardingScreen({ onComplete }) {
       <div className="onboard-card">
         <div className="onboard-logo"><Logo /></div>
         <div className="onboard-eyebrow">A Therapist-Designed Escalation Interruption System</div>
-        <h1 className="onboard-heading">Your Personal<br /><em>Workbook</em></h1>
+        <h1 className="onboard-heading">Rewire the Fight<br /><em>Your Couples Workbook</em></h1>
 
         {step === 1 && (
           <>
