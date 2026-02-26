@@ -18,6 +18,7 @@ const SCREEN_GRADIENTS = {
   repair:    "radial-gradient(ellipse 60% 50% at 8% 18%, rgba(220,205,215,0.50) 0%, transparent 58%), radial-gradient(ellipse 55% 45% at 88% 8%, rgba(238,232,222,0.60) 0%, transparent 52%), radial-gradient(ellipse 50% 55% at 70% 80%, rgba(208,215,228,0.38) 0%, transparent 52%), linear-gradient(150deg, #D0CAD8 0%, #D6D0CA 35%, #DDDAD4 60%, #E3DED9 100%)",
   reflect:   "radial-gradient(ellipse 55% 50% at 12% 22%, rgba(205,215,232,0.52) 0%, transparent 55%), radial-gradient(ellipse 50% 48% at 82% 10%, rgba(236,230,220,0.58) 0%, transparent 52%), radial-gradient(ellipse 55% 60% at 60% 88%, rgba(218,210,228,0.38) 0%, transparent 52%), linear-gradient(150deg, #CDD5E2 0%, #D5D1CB 35%, #DCDAD4 60%, #E2DDD8 100%)",
   goals:     "radial-gradient(ellipse 60% 52% at 8% 15%, rgba(218,208,195,0.52) 0%, transparent 58%), radial-gradient(ellipse 55% 45% at 88% 8%, rgba(195,212,228,0.55) 0%, transparent 52%), radial-gradient(ellipse 50% 58% at 72% 82%, rgba(225,218,205,0.40) 0%, transparent 52%), linear-gradient(150deg, #D4CEC5 0%, #D5D1CC 35%, #DDDAD4 60%, #E3DFDA 100%)",
+  tools:     "radial-gradient(ellipse 60% 50% at 10% 15%, rgba(195,208,230,0.55) 0%, transparent 60%), radial-gradient(ellipse 55% 45% at 90% 5%, rgba(240,236,228,0.65) 0%, transparent 55%), radial-gradient(ellipse 50% 60% at 80% 80%, rgba(218,212,228,0.40) 0%, transparent 55%), linear-gradient(150deg, #D0D6E4 0%, #D8D5D0 30%, #DDD9D3 55%, #E2DDD8 75%, #E6E2DC 100%)",
 };
 
 // ─── GLOBAL CSS ────────────────────────────────────────────────────────────────
@@ -855,17 +856,17 @@ function DashboardScreen({ partner, setup, logs, glimmers, partnerData, onNaviga
         <div className="fade-up delay-2">
           <div className="section-label">Something happened</div>
           <div className="tools-grid">
-            <div className="tool-card" onClick={() => onNavigate("regulate")}>
+            <div className="tool-card" onClick={() => handleNav("regulate")}>
               <span className="tool-icon">🌿</span>
               <span className="tool-name">Regulate</span>
               <span className="tool-desc">I'm activated right now</span>
             </div>
-            <div className="tool-card" onClick={() => onNavigate("repair")}>
+            <div className="tool-card" onClick={() => handleNav("repair")}>
               <span className="tool-icon">🤝</span>
               <span className="tool-name">Repair</span>
               <span className="tool-desc">We just had a fight</span>
             </div>
-            <div className="tool-card" onClick={() => onNavigate("reflect")}>
+            <div className="tool-card" onClick={() => handleNav("reflect")}>
               <span className="tool-icon">🔍</span>
               <span className="tool-name">Reflect</span>
               <span className="tool-desc">I want to understand what happened</span>
@@ -907,7 +908,7 @@ function DashboardScreen({ partner, setup, logs, glimmers, partnerData, onNaviga
             )) : (
               <p className="body-text" style={{ color: "var(--ink-faint)" }}>No glimmers yet.</p>
             )}
-            <button className="btn btn-ghost" onClick={() => onNavigate("glimmer")} style={{ marginTop: 14, width: "100%" }}>
+            <button className="btn btn-ghost" onClick={() => handleNav("glimmer")} style={{ marginTop: 14, width: "100%" }}>
               + Add a glimmer ✦
             </button>
           </div>
@@ -2197,7 +2198,7 @@ function SharedView({ data, onSave, partner, onNavigate }) {
       <LearnField label="Reflect together: what did you learn about each other?" fieldKey="shared_profile_reflect" data={data} onSave={onSave} placeholder="What surprised you? What do you want your partner to know you now understand?" rows={4} />
 
       <div style={{ height: 20 }} />
-      <button className="btn btn-primary-wide" onClick={() => onNavigate("agreement")}>Complete: Sign the Agreement →</button>
+      <button className="btn btn-primary-wide" onClick={() => handleNav("agreement")}>Complete: Sign the Agreement →</button>
     </div>
   );
 }
@@ -2268,6 +2269,7 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
   const last = logs?.[0];
   const setupDone = setup?.replacement_behavior && setup?.triggers?.length > 0;
   const recentGlimmers = glimmers?.slice(0, 3) || [];
+
 
   return (
     <AppScreen screen="dashboard" activeNav="dashboard" onNavClick={onNavigate} partnerData={partnerData}>
@@ -2368,6 +2370,81 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
   );
 }
 
+// ─── TOOLS SCREEN ─────────────────────────────────────────────────────────────
+function ToolsScreen({ partner, partnerData, onNavigate }) {
+  const TOOLS = [
+    {
+      id: "escalate", icon: "🔥", name: "Escalating",
+      desc: "We're in it right now. Get immediate support to stop the spiral.",
+      type: "hot",
+    },
+    {
+      id: "regulate", icon: "🌿", name: "Regulate",
+      desc: "I need to calm my nervous system before I can do anything else.",
+      type: "hot",
+    },
+    {
+      id: "repair", icon: "🤝", name: "Repair",
+      desc: "The fight is over. Now rebuild the bridge back to each other.",
+      type: "hot",
+    },
+    {
+      id: "learn", icon: "🏗️", name: "Learn the System",
+      desc: "Window of tolerance · Cycle map · EFT · Shared view",
+      type: "learn",
+    },
+    {
+      id: "reflect", icon: "🔍", name: "Reflect",
+      desc: "Calm-moment work. Look at the pattern from the outside.",
+      type: "learn",
+    },
+    {
+      id: "agreement", icon: "📜", name: "Agreement",
+      desc: "Your shared commitments. The contract you both signed.",
+      type: "learn",
+    },
+  ];
+
+  return (
+    <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+      <div className="main-header fade-up">
+        <div className="eyebrow">Tools</div>
+        <div className="heading">What do you need?</div>
+        <div className="subheading">Choose the right tool for the moment you're in.</div>
+      </div>
+      <div className="main-body">
+        <div className="fade-up delay-1">
+          <div className="section-label">Something is happening right now</div>
+          <div className="tools-grid">
+            {TOOLS.filter(t => t.type === "hot").map(t => (
+              <div key={t.id} className="tool-card hot" onClick={() => onNavigate(t.id)}
+                style={{ padding: "28px 18px 24px", cursor: "pointer" }}>
+                <span className="tool-icon" style={{ fontSize: "1.8rem" }}>{t.icon}</span>
+                <span className="tool-name" style={{ fontSize: "1.08rem" }}>{t.name}</span>
+                <span className="tool-desc" style={{ fontSize: "0.70rem", lineHeight: 1.5 }}>{t.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="fade-up delay-2" style={{ marginTop: 28 }}>
+          <div className="section-label">Understand & prevent</div>
+          <div className="tools-grid">
+            {TOOLS.filter(t => t.type === "learn").map(t => (
+              <div key={t.id} className="tool-card learn" onClick={() => onNavigate(t.id)}
+                style={{ padding: "28px 18px 24px", cursor: "pointer" }}>
+                <span className="tool-icon" style={{ fontSize: "1.8rem" }}>{t.icon}</span>
+                <span className="tool-name" style={{ fontSize: "1.08rem" }}>{t.name}</span>
+                <span className="tool-desc" style={{ fontSize: "0.70rem", lineHeight: 1.5 }}>{t.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </AppScreen>
+  );
+}
+
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(null);
@@ -2434,8 +2511,7 @@ export default function App() {
   };
 
   function handleNav(id) {
-    // "tools" nav item shows the dashboard (which is the tools hub)
-    setScreen(id === "tools" ? "dashboard" : id);
+    setScreen(id);
   }
 
   // Loading
@@ -2462,6 +2538,7 @@ export default function App() {
     <>
       <style>{FONTS + CSS}</style>
       {screen === "dashboard" && <DashboardWithLearn {...commonProps} logs={logs} glimmers={glimmers} />}
+      {screen === "tools"     && <ToolsScreen      {...commonProps} />}
       {screen === "setup"     && <SetupScreen     {...commonProps} onComplete={refresh} onBack={() => setScreen("dashboard")} />}
       {screen === "escalate"  && <EscalateScreen  {...commonProps} onBack={() => setScreen("dashboard")} />}
       {screen === "regulate"  && <RegulateScreen  {...commonProps} onBack={() => setScreen("dashboard")} onLog={refresh} />}
