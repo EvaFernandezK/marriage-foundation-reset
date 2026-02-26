@@ -677,21 +677,25 @@ function Sidebar({ activeNav, onNavClick, partnerData, onSignOut }) {
         </button>
       ))}
       <div className="sidebar-fill" />
+      <button onClick={onSignOut} style={{
+        background: "rgba(255,255,255,0.45)",
+        border: "1px solid rgba(255,255,255,0.7)",
+        borderRadius: "var(--radius-sm)",
+        cursor: "pointer",
+        fontFamily: "var(--sans)", fontSize: "0.72rem", fontWeight: 400,
+        color: "var(--ink-mid)", padding: "9px 14px", textAlign: "left",
+        letterSpacing: "0.04em", transition: "all 0.15s", width: "100%",
+        marginBottom: 10, display: "flex", alignItems: "center", gap: 7,
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.7)"; e.currentTarget.style.color = "var(--ink)"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.45)"; e.currentTarget.style.color = "var(--ink-mid)"; }}
+      ><span style={{fontSize:"0.9rem"}}>↪</span> Sign out</button>
       <div className="sync-pill">
         <div className={`sync-dot${partnerData ? " live" : ""}`} />
         <div className="sync-text">
           {partnerData ? `Connected with ${partnerData.name}` : "Waiting for partner\nto connect"}
         </div>
       </div>
-      <button onClick={onSignOut} style={{
-        background: "none", border: "none", cursor: "pointer",
-        fontFamily: "var(--sans)", fontSize: "0.62rem", fontWeight: 300,
-        color: "var(--ink-faint)", padding: "10px 0 4px", textAlign: "left",
-        letterSpacing: "0.06em", transition: "color 0.15s", width: "100%",
-      }}
-      onMouseEnter={e => e.target.style.color = "var(--ink-muted)"}
-      onMouseLeave={e => e.target.style.color = "var(--ink-faint)"}
-      >Sign out</button>
     </nav>
   );
 }
