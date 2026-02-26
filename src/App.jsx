@@ -2371,79 +2371,368 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
 }
 
 // ─── TOOLS SCREEN ─────────────────────────────────────────────────────────────
-function ToolsScreen({ partner, partnerData, onNavigate }) {
+// ─── TOOLS SCREEN ─────────────────────────────────────────────────────────────
+// 6 standalone regulation tools — separate from the workflow paths on the dashboard
+function ToolsScreen({ partner, setup, partnerData, onNavigate, onBack }) {
+  const [activeTool, setActiveTool] = useState(null); // null = grid view
+  const [toolPhase, setToolPhase] = useState("idle");
+  const [breathPhase, setBreathPhase] = useState("inhale");
+  const [breathCount, setBreathCount] = useState(4);
+  const [breathCycle, setBreathCycle] = useState(0);
+  const [groundStep, setGroundStep] = useState(0);
+  const [timerSecs, setTimerSecs] = useState(300);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [tapCount, setTapCount] = useState(0);
+  const [tapSide, setTapSide] = useState("left");
+  const [vizStep, setVizStep] = useState(0);
+  const [somaticStep, setSomaticStep] = useState(0);
+  const timerRef = useRef(null);
+  const tapRef = useRef(null);
+
+  useEffect(() => () => { clearTimeout(timerRef.current); clearInterval(tapRef.current); }, []);
+
+  // ── Breathing engine (box breath 4-4-4-4) ──────────────────────────────────
+  useEffect(() => {
+    if (toolPhase !== "running" || activeTool !== "breathing") return;
+    clearTimeout(timerRef.current);
+    const seq = [
+      { p: "inhale", c: 4, d: 4000 }, { p: "hold", c: 4, d: 4000 },
+      { p: "exhale", c: 4, d: 4000 }, { p: "hold", c: 4, d: 4000 },
+    ];
+    let i = 0, cycles = 0;
+    function tick() {
+      setBreathPhase(seq[i].p); setBreathCount(seq[i].c);
+      let c = seq[i].c;
+      const cd = setInterval(() => { c--; setBreathCount(c); if (c <= 0) clearInterval(cd); }, 1000);
+      timerRef.current = setTimeout(() => {
+        clearInterval(cd);
+        i = (i + 1) % seq.length;
+        if (i === 0) { cycles++; setBreathCycle(cycles); if (cycles >= 4) { setToolPhase("done"); return; } }
+        tick();
+      }, seq[i].d);
+    }
+    tick();
+    return () => clearTimeout(timerRef.current);
+  }, [toolPhase, activeTool]);
+
+  // ── Pause timer countdown ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!timerRunning) return;
+    const id = setInterval(() => {
+      setTimerSecs(s => { if (s <= 1) { clearInterval(id); setTimerRunning(false); setToolPhase("done"); return 0; } return s - 1; });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+
+  // ── Bilateral tapping ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (toolPhase !== "running" || activeTool !== "tapping") return;
+    let count = 0;
+    tapRef.current = setInterval(() => {
+      setTapSide(s => s === "left" ? "right" : "left");
+      count++;
+      setTapCount(count);
+      if (count >= 40) { clearInterval(tapRef.current); setToolPhase("done"); }
+    }, 600);
+    return () => clearInterval(tapRef.current);
+  }, [toolPhase, activeTool]);
+
   const TOOLS = [
-    {
-      id: "escalate", icon: "🔥", name: "Escalating",
-      desc: "We're in it right now. Get immediate support to stop the spiral.",
-      type: "hot",
-    },
-    {
-      id: "regulate", icon: "🌿", name: "Regulate",
-      desc: "I need to calm my nervous system before I can do anything else.",
-      type: "hot",
-    },
-    {
-      id: "repair", icon: "🤝", name: "Repair",
-      desc: "The fight is over. Now rebuild the bridge back to each other.",
-      type: "hot",
-    },
-    {
-      id: "learn", icon: "🏗️", name: "Learn the System",
-      desc: "Window of tolerance · Cycle map · EFT · Shared view",
-      type: "learn",
-    },
-    {
-      id: "reflect", icon: "🔍", name: "Reflect",
-      desc: "Calm-moment work. Look at the pattern from the outside.",
-      type: "learn",
-    },
-    {
-      id: "agreement", icon: "📜", name: "Agreement",
-      desc: "Your shared commitments. The contract you both signed.",
-      type: "learn",
-    },
+    { id: "breathing",     icon: "🔵", name: "Box Breathing",          desc: "4·4·4·4 breath pattern. Calms your nervous system in under 2 minutes.",        color: "rgba(122,158,142,0.15)" },
+    { id: "grounding",     icon: "🌿", name: "5-4-3-2-1 Grounding",    desc: "Use your senses to come back to the present moment.",                          color: "rgba(184,153,90,0.12)"  },
+    { id: "visualization", icon: "☁️", name: "Safe Place",             desc: "Guided imagery to access a felt sense of safety and calm.",                    color: "rgba(138,132,158,0.15)" },
+    { id: "tapping",       icon: "✋", name: "Bilateral Tapping",       desc: "Rhythmic left-right stimulation to process and release activation.",            color: "rgba(196,154,138,0.15)" },
+    { id: "timer",         icon: "⏱", name: "Pause Timer",             desc: "Set a structured timeout. Come back when your nervous system is ready.",       color: "rgba(122,158,142,0.12)" },
+    { id: "somatic",       icon: "🫀", name: "Somatic Scan",            desc: "Body-first awareness. Notice where you're holding tension and invite release.", color: "rgba(184,153,90,0.10)"  },
   ];
 
+  const GROUND = [
+    { n: 5, sense: "See",   prompt: "Look around. Name 5 things you can see right now. Don't judge them — just notice." },
+    { n: 4, sense: "Touch", prompt: "Feel 4 physical sensations — your feet on the floor, the chair beneath you, the air on your skin, your hands." },
+    { n: 3, sense: "Hear",  prompt: "What 3 sounds can you hear? Near or far. Don't label them as good or bad. Just sounds." },
+    { n: 2, sense: "Smell", prompt: "Name 2 things you can smell right now — or simply notice the quality of the air." },
+    { n: 1, sense: "Taste", prompt: "What is 1 thing you can taste right now? Just notice." },
+  ];
+
+  const VIZ_STEPS = [
+    { title: "Close your eyes", prompt: "Take a slow breath in, and let it out. Let your body settle." },
+    { title: "Find your safe place", prompt: "Imagine a place — real or imagined — where you feel completely safe. It could be a room, a landscape, a moment in time. Let it take shape." },
+    { title: "Step inside", prompt: "Notice what you see there. Colors, shapes, light. What does this place look, feel, smell like?" },
+    { title: "Feel the safety", prompt: "Notice what happens in your body as you're here. Your shoulders. Your chest. Your breath. Let yourself soften." },
+    { title: "Anchor it", prompt: "Place your hand on your heart. Feel the warmth. This place is always available to you. You can return here anytime." },
+  ];
+
+  const SOMATIC_STEPS = [
+    { area: "Head & face",     prompt: "Notice your forehead, jaw, and eyes. Are you holding tension there? Can you soften?" },
+    { area: "Neck & shoulders", prompt: "Let your shoulders drop. Notice if there's any tightness in your throat or neck." },
+    { area: "Chest & heart",   prompt: "Place a hand on your chest. Notice what you feel. Is your breath shallow or deep? Can you breathe a little deeper?" },
+    { area: "Belly",           prompt: "Notice your belly. Is it tight or soft? Breathe all the way down into your abdomen." },
+    { area: "Hands & arms",    prompt: "Unclench your hands. Let your arms feel heavy and relaxed." },
+    { area: "Legs & feet",     prompt: "Feel the weight of your legs. Feel your feet on the floor. You are grounded. You are here." },
+  ];
+
+  function openTool(id) {
+    setActiveTool(id);
+    setToolPhase("intro");
+    setBreathCycle(0); setBreathPhase("inhale"); setBreathCount(4);
+    setGroundStep(0); setVizStep(0); setSomaticStep(0);
+    setTimerSecs(300); setTimerRunning(false); setTapCount(0); setTapSide("left");
+  }
+
+  function closeTool() {
+    clearTimeout(timerRef.current); clearInterval(tapRef.current);
+    setTimerRunning(false); setActiveTool(null); setToolPhase("idle");
+  }
+
+  const breathLabel = { inhale: "Breathe in", hold: "Hold", exhale: "Breathe out" }[breathPhase] || "Breathe";
+  const breathInstr = { inhale: "Slow breath in through your nose…", hold: "Hold gently…", exhale: "Slow breath out through your mouth…" }[breathPhase] || "";
+  const fmtTimer = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+
+  // ── Tool detail view ───────────────────────────────────────────────────────
+  if (activeTool) {
+    const tool = TOOLS.find(t => t.id === activeTool);
+
+    // Intro card
+    if (toolPhase === "intro") return (
+      <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+        <div className="top-bar fade-up"><button className="back-btn" onClick={closeTool}>← Tools</button></div>
+        <div style={{ padding: "20px 44px 44px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }} className="fade-up delay-1">
+          <div style={{ fontSize: "3rem", textAlign: "center", marginBottom: 20 }}>{tool.icon}</div>
+          <div className="heading-md" style={{ textAlign: "center" }}>{tool.name}</div>
+          <p className="body-text" style={{ margin: "14px 0 32px", textAlign: "center", lineHeight: 1.7 }}>{tool.desc}</p>
+          {activeTool === "timer" && (
+            <div style={{ marginBottom: 24 }}>
+              <div className="section-label" style={{ textAlign: "center", marginBottom: 12 }}>Set your timer</div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+                {[
+                  { label: "5 min", s: 300 }, { label: "10 min", s: 600 },
+                  { label: "15 min", s: 900 }, { label: "20 min", s: 1200 },
+                ].map(opt => (
+                  <button key={opt.s} onClick={() => setTimerSecs(opt.s)} style={{
+                    padding: "9px 16px", borderRadius: 100, border: "1.5px solid",
+                    borderColor: timerSecs === opt.s ? "var(--ink)" : "rgba(30,33,40,0.18)",
+                    background: timerSecs === opt.s ? "var(--ink)" : "transparent",
+                    color: timerSecs === opt.s ? "rgba(252,251,249,0.95)" : "var(--ink-mid)",
+                    fontSize: "0.76rem", cursor: "pointer", fontFamily: "var(--sans)",
+                  }}>{opt.label}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button className="btn btn-primary-wide" onClick={() => setToolPhase("running")}>
+            {activeTool === "timer" ? `Start ${fmtTimer(timerSecs)} timer` : "Begin"}
+          </button>
+          <button className="btn btn-ghost btn-full" style={{ marginTop: 8 }} onClick={closeTool}>Not now</button>
+        </div>
+      </AppScreen>
+    );
+
+    // Running states
+    if (toolPhase === "running") {
+
+      // Box Breathing
+      if (activeTool === "breathing") return (
+        <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px", alignItems: "center" }}>
+            <div className="eyebrow fade-up" style={{ alignSelf: "flex-start" }}>Box Breathing · Cycle {breathCycle + 1} of 4</div>
+            <div className="breathing-wrap">
+              <div className={`breath-circle ${breathPhase}`}>
+                <div style={{ textAlign: "center" }}>
+                  <div className="breath-count">{breathCount}</div>
+                  <div className="breath-phase">{breathLabel}</div>
+                </div>
+              </div>
+              <div className="breath-instruction">{breathInstr}</div>
+            </div>
+            <button className="btn btn-ghost btn-full" onClick={() => setToolPhase("done")}>Done</button>
+          </div>
+        </AppScreen>
+      );
+
+      // Grounding
+      if (activeTool === "grounding") {
+        const gs = GROUND[groundStep];
+        return (
+          <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px" }}>
+              <div className="eyebrow fade-up">5-4-3-2-1 Grounding · {groundStep + 1} of 5</div>
+              <div className="breathing-wrap">
+                <div className="grounding-num">{gs.n}</div>
+                <div className="grounding-sense">{gs.sense}</div>
+                <div className="grounding-prompt">{gs.prompt}</div>
+              </div>
+              {groundStep < GROUND.length - 1
+                ? <button className="btn btn-primary-wide" onClick={() => setGroundStep(s => s + 1)}>Done — next →</button>
+                : <button className="btn btn-primary-wide" onClick={() => setToolPhase("done")}>I'm grounded ✓</button>
+              }
+            </div>
+          </AppScreen>
+        );
+      }
+
+      // Visualization
+      if (activeTool === "visualization") {
+        const vs = VIZ_STEPS[vizStep];
+        return (
+          <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px" }}>
+              <div className="eyebrow fade-up">Safe Place · {vizStep + 1} of {VIZ_STEPS.length}</div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 20 }}>
+                <div style={{ height: 3, background: "rgba(120,130,155,0.12)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ height: "100%", background: "var(--ink)", borderRadius: 2, width: `${((vizStep + 1) / VIZ_STEPS.length) * 100}%`, transition: "width 0.4s ease" }} />
+                </div>
+                <div style={{ fontFamily: "var(--serif)", fontSize: "1.35rem", fontWeight: 400, color: "var(--ink)", lineHeight: 1.3 }}>{vs.title}</div>
+                <div className="insight" style={{ fontStyle: "normal", fontSize: "0.92rem", lineHeight: 1.75 }}>{vs.prompt}</div>
+              </div>
+              {vizStep < VIZ_STEPS.length - 1
+                ? <button className="btn btn-primary-wide" onClick={() => setVizStep(s => s + 1)}>Continue →</button>
+                : <button className="btn btn-primary-wide" onClick={() => setToolPhase("done")}>Complete ✓</button>
+              }
+            </div>
+          </AppScreen>
+        );
+      }
+
+      // Bilateral Tapping
+      if (activeTool === "tapping") return (
+        <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px", alignItems: "center" }}>
+            <div className="eyebrow fade-up" style={{ alignSelf: "flex-start" }}>Bilateral Tapping · {tapCount} of 40</div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 32 }}>
+              <p className="body-text" style={{ textAlign: "center", lineHeight: 1.7 }}>
+                Tap your knees, shoulders, or thighs alternately — left, right, left, right — following the rhythm below.
+              </p>
+              <div style={{ display: "flex", gap: 40, alignItems: "center" }}>
+                {["left", "right"].map(side => (
+                  <div key={side} style={{
+                    width: 64, height: 64, borderRadius: "50%",
+                    background: tapSide === side ? "var(--ink)" : "rgba(30,33,40,0.10)",
+                    border: "2px solid",
+                    borderColor: tapSide === side ? "var(--ink)" : "rgba(30,33,40,0.18)",
+                    transition: "all 0.15s ease",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "var(--sans)", fontSize: "0.65rem", fontWeight: 400,
+                    color: tapSide === side ? "rgba(252,251,249,0.9)" : "var(--ink-muted)",
+                    letterSpacing: "0.08em", textTransform: "uppercase",
+                  }}>{side}</div>
+                ))}
+              </div>
+              <div style={{ height: 3, width: "100%", background: "rgba(120,130,155,0.12)", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", background: "var(--ink)", borderRadius: 2, width: `${(tapCount / 40) * 100}%`, transition: "width 0.2s ease" }} />
+              </div>
+            </div>
+            <button className="btn btn-ghost btn-full" onClick={() => { clearInterval(tapRef.current); setToolPhase("done"); }}>Done early</button>
+          </div>
+        </AppScreen>
+      );
+
+      // Pause Timer
+      if (activeTool === "timer") {
+        if (!timerRunning) setTimerRunning(true);
+        return (
+          <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px", alignItems: "center" }}>
+              <div className="eyebrow fade-up" style={{ alignSelf: "flex-start" }}>Pause Timer</div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+                <div style={{ fontFamily: "var(--serif)", fontSize: "5rem", fontWeight: 300, color: "var(--ink)", lineHeight: 1 }}>{fmtTimer(timerSecs)}</div>
+                <p className="body-text" style={{ textAlign: "center", lineHeight: 1.7, maxWidth: 340 }}>
+                  Use this time to breathe, walk, or just exist. Don't rehearse the argument. Come back when you're ready.
+                </p>
+                <div className="insight" style={{ maxWidth: 340, textAlign: "center" }}>
+                  "You're not running away. You're protecting the conversation."
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-full" onClick={() => { setTimerRunning(false); setToolPhase("done"); }}>End timer early</button>
+            </div>
+          </AppScreen>
+        );
+      }
+
+      // Somatic Scan
+      if (activeTool === "somatic") {
+        const ss = SOMATIC_STEPS[somaticStep];
+        return (
+          <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px" }}>
+              <div className="eyebrow fade-up">Somatic Scan · {somaticStep + 1} of {SOMATIC_STEPS.length}</div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 20 }}>
+                <div style={{ height: 3, background: "rgba(120,130,155,0.12)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ height: "100%", background: "var(--ink)", borderRadius: 2, width: `${((somaticStep + 1) / SOMATIC_STEPS.length) * 100}%`, transition: "width 0.4s ease" }} />
+                </div>
+                <div style={{ fontFamily: "var(--serif)", fontSize: "1.2rem", fontWeight: 400, color: "var(--ink-muted)", letterSpacing: "0.04em" }}>{ss.area}</div>
+                <div className="insight" style={{ fontStyle: "normal", fontSize: "0.94rem", lineHeight: 1.75 }}>{ss.prompt}</div>
+              </div>
+              {somaticStep < SOMATIC_STEPS.length - 1
+                ? <button className="btn btn-primary-wide" onClick={() => setSomaticStep(s => s + 1)}>Continue →</button>
+                : <button className="btn btn-primary-wide" onClick={() => setToolPhase("done")}>Complete ✓</button>
+              }
+            </div>
+          </AppScreen>
+        );
+      }
+    }
+
+    // Done state
+    if (toolPhase === "done") return (
+      <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px", alignItems: "center", justifyContent: "center" }} className="fade-up">
+          <div style={{ fontSize: "2.5rem", marginBottom: 16, textAlign: "center" }}>✦</div>
+          <div className="heading-md" style={{ textAlign: "center" }}>Well done.</div>
+          <p className="body-text" style={{ margin: "12px 0 32px", textAlign: "center", lineHeight: 1.7, maxWidth: 340 }}>
+            You used a tool. That's not nothing — that's the work. Your nervous system is a little more regulated than it was.
+          </p>
+          <button className="btn btn-primary-wide" onClick={closeTool}>Try another tool</button>
+          <button className="btn btn-ghost btn-full" style={{ marginTop: 8 }} onClick={() => onNavigate("dashboard")}>Return to dashboard</button>
+        </div>
+      </AppScreen>
+    );
+  }
+
+  // ── Grid view — default ────────────────────────────────────────────────────
   return (
     <AppScreen screen="tools" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="main-header fade-up">
-        <div className="eyebrow">Tools</div>
-        <div className="heading">What do you need?</div>
-        <div className="subheading">Choose the right tool for the moment you're in.</div>
+        <div className="eyebrow">Regulation Tools</div>
+        <div className="heading">Settle your system.</div>
+        <div className="subheading">Pick the tool that fits the moment you're in.</div>
       </div>
       <div className="main-body">
-        <div className="fade-up delay-1">
-          <div className="section-label">Something is happening right now</div>
-          <div className="tools-grid">
-            {TOOLS.filter(t => t.type === "hot").map(t => (
-              <div key={t.id} className="tool-card hot" onClick={() => onNavigate(t.id)}
-                style={{ padding: "28px 18px 24px", cursor: "pointer" }}>
-                <span className="tool-icon" style={{ fontSize: "1.8rem" }}>{t.icon}</span>
-                <span className="tool-name" style={{ fontSize: "1.08rem" }}>{t.name}</span>
-                <span className="tool-desc" style={{ fontSize: "0.70rem", lineHeight: 1.5 }}>{t.desc}</span>
+        <div className="fade-up delay-1" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+          {TOOLS.map((t, i) => (
+            <div
+              key={t.id}
+              className={`fade-up`}
+              style={{ animationDelay: `${0.06 + i * 0.05}s` }}
+              onClick={() => openTool(t.id)}
+            >
+              <div style={{
+                background: t.color,
+                border: "1px solid rgba(255,255,255,0.68)",
+                borderRadius: "var(--radius-lg)",
+                padding: "28px 16px 24px",
+                textAlign: "center",
+                cursor: "pointer",
+                backdropFilter: "blur(16px)",
+                boxShadow: "0 3px 20px rgba(55,68,95,0.09), 0 1px 0 rgba(255,255,255,0.9) inset",
+                transition: "all 0.20s",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 9,
+                height: "100%",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 10px 32px rgba(55,68,95,0.14), 0 1px 0 rgba(255,255,255,1) inset"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 3px 20px rgba(55,68,95,0.09), 0 1px 0 rgba(255,255,255,0.9) inset"; }}
+              >
+                <span style={{ fontSize: "1.8rem" }}>{t.icon}</span>
+                <span style={{ fontFamily: "var(--serif)", fontSize: "1.0rem", fontWeight: 400, color: "var(--ink)" }}>{t.name}</span>
+                <span style={{ fontSize: "0.67rem", fontWeight: 300, color: "var(--ink-muted)", lineHeight: 1.5 }}>{t.desc}</span>
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="fade-up delay-2" style={{ marginTop: 28 }}>
-          <div className="section-label">Understand & prevent</div>
-          <div className="tools-grid">
-            {TOOLS.filter(t => t.type === "learn").map(t => (
-              <div key={t.id} className="tool-card learn" onClick={() => onNavigate(t.id)}
-                style={{ padding: "28px 18px 24px", cursor: "pointer" }}>
-                <span className="tool-icon" style={{ fontSize: "1.8rem" }}>{t.icon}</span>
-                <span className="tool-name" style={{ fontSize: "1.08rem" }}>{t.name}</span>
-                <span className="tool-desc" style={{ fontSize: "0.70rem", lineHeight: 1.5 }}>{t.desc}</span>
-              </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </AppScreen>
   );
 }
+
 
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
