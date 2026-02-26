@@ -178,13 +178,13 @@ const CSS = `
     overflow-y: auto;
   }
   .main-header {
-    padding: 36px 44px 22px;
+    padding: 48px 52px 28px;
     border-bottom: 1px solid rgba(255,255,255,0.36);
     flex-shrink: 0;
   }
   .main-body {
-    padding: 26px 44px 44px;
-    display: flex; flex-direction: column; gap: 24px;
+    padding: 36px 52px 56px;
+    display: flex; flex-direction: column; gap: 28px;
     flex: 1;
   }
 
