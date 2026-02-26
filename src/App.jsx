@@ -70,25 +70,26 @@ const CSS = `
     transition: background 0.6s ease;
   }
 
-  /* ── PAGE WRAPPER ── */
+  /* ── PAGE WRAPPER — tight padding so background is a frame, not dead space ── */
   .page-wrap {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 32px 36px 56px;
+    padding: 16px 20px 32px;
   }
 
-  /* ── CONTAINER ── */
+  /* ── CONTAINER — deeper shadow to separate from bg, strong foreground ── */
   .container {
     width: 100%;
-    max-width: 1160px;
-    border-radius: var(--radius-xl);
+    max-width: 1200px;
+    border-radius: 20px;
     box-shadow:
-      0 0 0 1px rgba(255,255,255,0.50),
-      0 28px 72px rgba(70, 85, 115, 0.16),
-      0 6px 20px rgba(70, 85, 115, 0.08);
+      0 0 0 1px rgba(255,255,255,0.55),
+      0 32px 80px rgba(55, 68, 95, 0.22),
+      0 8px 24px rgba(55, 68, 95, 0.10),
+      0 2px 6px rgba(55, 68, 95, 0.06);
     overflow: hidden;
     position: relative;
   }
@@ -124,21 +125,22 @@ const CSS = `
 
   .nav-link {
     display: flex; align-items: center; gap: 11px;
-    padding: 10px 14px; border-radius: var(--radius-sm);
+    padding: 11px 14px; border-radius: var(--radius-sm);
     cursor: pointer; border: 1px solid transparent;
     transition: all 0.18s; text-decoration: none;
     background: transparent;
     font-family: var(--sans);
   }
-  .nav-link:hover { background: var(--surface-sm); border-color: var(--stroke-sm); }
+  .nav-link:hover { background: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.50); }
   .nav-link.active {
-    background: var(--surface-md); border-color: var(--stroke);
-    box-shadow: 0 2px 12px rgba(80,95,120,0.08);
+    background: rgba(255,255,255,0.58);
+    border-color: rgba(255,255,255,0.72);
+    box-shadow: 0 2px 14px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.9) inset;
   }
-  .nav-icon { font-size: 0.85rem; color: var(--ink-muted); width: 17px; text-align: center; }
-  .nav-label { font-size: 0.75rem; font-weight: 300; color: var(--ink-muted); letter-spacing: 0.02em; }
-  .nav-link.active .nav-icon,
-  .nav-link.active .nav-label { color: var(--ink-soft); font-weight: 400; }
+  .nav-icon { font-size: 0.9rem; color: var(--ink-muted); width: 17px; text-align: center; }
+  .nav-label { font-size: 0.78rem; font-weight: 300; color: var(--ink-mid); letter-spacing: 0.01em; }
+  .nav-link.active .nav-icon { color: var(--ink); }
+  .nav-link.active .nav-label { color: var(--ink); font-weight: 500; }
 
   .sidebar-fill { flex: 1; }
 
@@ -367,19 +369,41 @@ const CSS = `
   .step-dot.active { background: var(--ink); opacity: 0.45; }
 
   /* ── TOOLS GRID ── */
-  .tools-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .tools-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .tool-card {
-    background: var(--surface);
-    border: 1px solid var(--stroke);
+    background: rgba(255,255,254,0.68);
+    border: 1px solid rgba(255,255,255,0.72);
     border-radius: var(--radius-lg);
-    box-shadow: var(--card-shadow);
-    padding: 22px 16px 20px;
+    box-shadow: 0 3px 20px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.95) inset;
+    padding: 22px 14px 20px;
     text-align: center;
-    cursor: pointer; transition: all 0.18s;
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    cursor: pointer; transition: all 0.20s;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
     display: flex; flex-direction: column; align-items: center; gap: 8px;
   }
-  .tool-card:hover { transform: translateY(-2px); box-shadow: var(--card-shadow-hover); }
+  .tool-card:hover {
+    transform: translateY(-3px);
+    background: rgba(255,255,254,0.88);
+    box-shadow: 0 10px 36px rgba(55,68,95,0.15), 0 1px 0 rgba(255,255,255,1) inset;
+  }
+  /* Hot tools — slightly elevated/brighter to signal urgency */
+  .tool-card.hot {
+    background: rgba(255,255,254,0.82);
+    box-shadow: 0 4px 24px rgba(55,68,95,0.13), 0 1px 0 rgba(255,255,255,1) inset;
+  }
+  .tool-card.hot:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(55,68,95,0.17), 0 1px 0 rgba(255,255,255,1) inset;
+  }
+  /* Learn tools — slightly recessed/tonal to signal reflection */
+  .tool-card.learn {
+    background: rgba(252,251,249,0.55);
+    box-shadow: 0 2px 14px rgba(55,68,95,0.07), 0 1px 0 rgba(255,255,255,0.85) inset;
+  }
+  .tool-card.learn:hover {
+    background: rgba(255,255,254,0.75);
+    box-shadow: 0 8px 28px rgba(55,68,95,0.12), 0 1px 0 rgba(255,255,255,0.95) inset;
+  }
   .tool-icon { font-size: 1.4rem; }
   .tool-name { font-family: var(--serif); font-size: 1.02rem; font-weight: 400; color: var(--ink); }
   .tool-desc { font-size: 0.65rem; font-weight: 300; color: var(--ink-muted); line-height: 1.45; }
@@ -492,37 +516,36 @@ const CSS = `
 
   /* ── RESPONSIVE ── */
   @media (max-width: 860px) {
-    .page-wrap { padding: 20px 18px 44px; }
-    .container { border-radius: 24px; }
+    .page-wrap { padding: 10px 10px 24px; }
+    .container { border-radius: 16px; }
     .layout-sidebar { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .sidebar {
       position: static; height: auto; min-height: auto;
       flex-direction: row; flex-wrap: wrap; gap: 6px;
-      padding: 18px 18px 14px;
+      padding: 14px 16px 12px;
       border-right: none; border-bottom: 1px solid rgba(255,255,255,0.36);
     }
     .brand { margin-bottom: 0; margin-right: 4px; }
     .sidebar-fill { display: none; }
-    .sync-pill { padding: 8px 12px; }
-    .main-header { padding: 22px 22px 16px; }
-    .main-body   { padding: 18px 22px 36px; }
-    .top-bar     { padding: 18px 22px 0; }
+    .sync-pill { padding: 7px 10px; }
+    .main-header { padding: 20px 20px 14px; }
+    .main-body   { padding: 16px 20px 32px; }
+    .top-bar     { padding: 16px 20px 0; }
     .heading { font-size: 1.9rem; }
     .two-col { grid-template-columns: 1fr; }
     .nudge-card { flex-direction: column; gap: 14px; align-items: flex-start; }
     .btn-primary { width: 100%; }
-    .layout-centered { padding: 32px 24px; }
+    .layout-centered { padding: 28px 20px; }
   }
 
   @media (max-width: 560px) {
     .page-wrap { padding: 0; }
     .container { border-radius: 0; box-shadow: none; }
     .tools-grid { grid-template-columns: 1fr 1fr; }
-    .tools-grid .tool-card:last-child { grid-column: 1 / -1; }
     .heading { font-size: 1.7rem; }
-    .main-header { padding: 18px 18px 14px; }
-    .main-body   { padding: 14px 18px 40px; }
-    .top-bar     { padding: 16px 18px 0; }
+    .main-header { padding: 16px 16px 12px; }
+    .main-body   { padding: 12px 16px 36px; }
+    .top-bar     { padding: 14px 16px 0; }
   }
 `;
 
@@ -1012,7 +1035,7 @@ function SetupScreen({ partner, setup, onComplete, onBack, onNavigate, partnerDa
   ];
 
   return (
-    <AppScreen screen="setup" layout="full" activeNav="setup" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="setup" layout="sidebar" activeNav="setup" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up">
         <button className="back-btn" onClick={onBack}>← Back</button>
         <span className="caption-text">My Setup</span>
@@ -1107,9 +1130,9 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
   const breathInstr = { inhale: "Slow breath in through your nose…", hold: "Hold gently…", exhale: "Slow breath out through your mouth…" }[breathPhase];
 
   if (phase === "check") return (
-    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
-      <div style={{ padding: "0 44px 44px", flex: 1 }} className="fade-up delay-1">
+      <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 20 }} />
         <div className="eyebrow">Regulate</div>
         <div className="heading-md">Where are you right now?</div>
@@ -1134,9 +1157,9 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
   );
 
   if (phase === "tool-select") return (
-    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={() => setPhase("check")}>← Back</button></div>
-      <div style={{ padding: "0 44px 44px", flex: 1 }} className="fade-up delay-1">
+      <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 20 }} />
         <div className="eyebrow">Choose a tool</div>
         <div className="heading-md">How do you want to regulate?</div>
@@ -1160,7 +1183,7 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
   );
 
   if (phase === "breathing" || phase === "sigh") return (
-    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px" }}>
         <div className="eyebrow fade-up">{phase === "breathing" ? "Box Breathing" : "Physiological Sigh"}</div>
         <div className="breathing-wrap">
@@ -1181,7 +1204,7 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
   if (phase === "grounding") {
     const gs = GROUND[groundStep] || GROUND[GROUND.length - 1];
     return (
-      <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+      <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
         <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "36px 44px 44px" }}>
           <div className="eyebrow fade-up">5-4-3-2-1 Grounding</div>
           <div className="breathing-wrap">
@@ -1200,7 +1223,7 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
   }
 
   if (phase === "replacement") return (
-    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div style={{ padding: "36px 44px 44px", flex: 1 }} className="fade-up">
         <div className="eyebrow">Your plan for this moment</div>
         <div className="heading-md">You've regulated.<br/>Now what?</div>
@@ -1229,7 +1252,7 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
   );
 
   if (phase === "log") return (
-    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div style={{ padding: "36px 44px 44px", flex: 1 }} className="fade-up">
         <div className="eyebrow">Log it</div>
         <div className="heading-md">One more thing</div>
@@ -1265,9 +1288,9 @@ function RepairScreen({ partner, setup, onBack, onLog, onNavigate, partnerData }
   }
 
   if (phase === "check") return (
-    <AppScreen screen="repair" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
-      <div style={{ padding: "0 44px 44px", flex: 1 }} className="fade-up delay-1">
+      <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 20 }} />
         <div className="eyebrow">Repair</div>
         <div className="heading-md">Before we start —<br/>where are you?</div>
@@ -1303,7 +1326,7 @@ function RepairScreen({ partner, setup, onBack, onLog, onNavigate, partnerData }
   if (phase === "scripts") {
     const idx = PHASES.indexOf(scriptPhase);
     return (
-      <AppScreen screen="repair" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+      <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
         <div className="top-bar fade-up">
           <button className="back-btn" onClick={() => idx === 0 ? setPhase("check") : setScriptPhase(PHASES[idx - 1])}>← Back</button>
           <span className="caption-text">{idx + 1} of {PHASES.length}</span>
@@ -1331,7 +1354,7 @@ function RepairScreen({ partner, setup, onBack, onLog, onNavigate, partnerData }
   }
 
   if (phase === "log") return (
-    <AppScreen screen="repair" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div style={{ padding: "36px 44px 44px", flex: 1 }} className="fade-up">
         <div className="eyebrow">Log the conflict</div>
         <div className="heading-md">What happened?</div>
@@ -1363,7 +1386,7 @@ function ReflectScreen({ partner, setup, onBack, onSave, onNavigate, partnerData
   }
 
   return (
-    <AppScreen screen="reflect" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="reflect" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
       <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 20 }} />
@@ -1382,31 +1405,80 @@ function ReflectScreen({ partner, setup, onBack, onSave, onNavigate, partnerData
   );
 }
 
-// ─── GOALS SCREEN ──────────────────────────────────────────────────────────────
+// ─── GOALS SCREEN — multiple goals, proper sidebar nav ────────────────────────
 function GoalsScreen({ partner, setup, onBack, onSave, onNavigate, partnerData }) {
-  const [goals, setGoals] = useState(setup?.shared_goals || "");
+  const [goals, setGoals] = useState(() => {
+    // Support both old single-string format and new array format
+    const raw = setup?.shared_goals;
+    if (!raw) return [{ id: 1, text: "" }];
+    if (typeof raw === "string") return raw ? [{ id: 1, text: raw }] : [{ id: 1, text: "" }];
+    return raw.length > 0 ? raw : [{ id: 1, text: "" }];
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  function updateGoal(id, text) { setGoals(g => g.map(x => x.id === id ? { ...x, text } : x)); }
+  function addGoal() { setGoals(g => [...g, { id: Date.now(), text: "" }]); }
+  function removeGoal(id) { if (goals.length === 1) return; setGoals(g => g.filter(x => x.id !== id)); }
+
   async function save() {
     setSaving(true);
-    try { await supabase.from("setup").update({ shared_goals: goals, updated_at: new Date().toISOString() }).eq("partner_id", partner.id); setSaved(true); setTimeout(() => setSaved(false), 3000); }
-    catch(e) { console.error(e); } finally { setSaving(false); }
+    try {
+      await supabase.from("setup").update({ shared_goals: goals, updated_at: new Date().toISOString() }).eq("partner_id", partner.id);
+      setSaved(true); setTimeout(() => setSaved(false), 3000);
+    } catch(e) { console.error(e); } finally { setSaving(false); }
   }
 
   return (
-    <AppScreen screen="goals" layout="full" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
-      <div style={{ padding: "36px 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up">
+    <AppScreen screen="goals" layout="sidebar" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
+      <div className="main-header fade-up">
         <div className="eyebrow">Our Goals</div>
-        <div className="heading-md">What you're working toward</div>
-        <p className="body-text" style={{ margin: "10px 0 18px" }}>This is the anchor. When things feel hard, this is why you're doing the work.</p>
-        {saved && <div className="msg-success">Goals saved.</div>}
-        <div className="field"><label>Our shared goal</label><textarea value={goals} onChange={e => setGoals(e.target.value)} placeholder="What we want for our relationship is…" rows={6} /></div>
-        <button className="btn btn-primary-wide" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save"}</button>
-        <div className="divider" style={{ marginTop: 28 }} />
-        <div className="heading-sm">Add a glimmer</div>
-        <p className="body-text" style={{ margin: "8px 0 18px" }}>A glimmer is a small moment of connection or safety. Noticing them trains your nervous system to see more of them.</p>
-        <GlimmerAdd partner={partner} />
+        <div className="heading">What you're working toward.</div>
+        <div className="subheading">The anchor. When things feel hard, this is why.</div>
+      </div>
+      <div className="main-body">
+        {saved && <div className="msg-success fade-up">Goals saved.</div>}
+
+        <div className="fade-up delay-1">
+          <div className="section-label">Our shared goals</div>
+          <p className="body-text" style={{ marginBottom: 16 }}>Add as many as you need. Be specific — not "communicate better" but what you actually want to stop happening.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {goals.map((g, i) => (
+              <div key={g.id} className="card" style={{ position: "relative", padding: "18px 20px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div className="eyebrow" style={{ marginBottom: 0 }}>Goal {i + 1}</div>
+                  {goals.length > 1 && (
+                    <button onClick={() => removeGoal(g.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-faint)", fontSize: "0.78rem", padding: "2px 6px", transition: "color 0.15s" }}
+                      onMouseEnter={e => e.target.style.color = "var(--ink-muted)"} onMouseLeave={e => e.target.style.color = "var(--ink-faint)"}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  style={{ width: "100%", background: "rgba(252,251,249,0.65)", border: "1px solid rgba(255,255,255,0.60)", borderRadius: "var(--radius-sm)", padding: "11px 14px", fontFamily: "var(--sans)", fontSize: "0.84rem", fontWeight: 300, color: "var(--ink)", outline: "none", resize: "vertical", minHeight: 80, lineHeight: 1.6 }}
+                  value={g.text} rows={3}
+                  placeholder="What we want for our relationship is…"
+                  onChange={e => updateGoal(g.id, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-ghost" onClick={addGoal} style={{ marginTop: 10 }}>+ Add another goal</button>
+        </div>
+
+        <div className="fade-up delay-2">
+          <button className="btn btn-primary-wide" disabled={saving} onClick={save}>
+            {saving ? "Saving…" : "Save goals"}
+          </button>
+        </div>
+
+        <div className="divider fade-up delay-3" />
+
+        <div className="fade-up delay-3">
+          <div className="section-label">Glimmer journal</div>
+          <p className="body-text" style={{ marginBottom: 16 }}>A glimmer is a small moment of connection or safety. Noticing them trains your nervous system to see more of them.</p>
+          <GlimmerAdd partner={partner} />
+        </div>
       </div>
     </AppScreen>
   );
@@ -1415,9 +1487,9 @@ function GoalsScreen({ partner, setup, onBack, onSave, onNavigate, partnerData }
 // ─── GLIMMER SCREEN ────────────────────────────────────────────────────────────
 function GlimmerScreen({ partner, onBack, onNavigate, partnerData }) {
   return (
-    <AppScreen screen="goals" layout="full" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="goals" layout="sidebar" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
-      <div style={{ padding: "0 44px 44px", flex: 1 }} className="fade-up delay-1">
+      <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 20 }} />
         <div className="eyebrow">Glimmer Journal</div>
         <div className="heading-md">Add a glimmer</div>
@@ -1464,7 +1536,7 @@ function EscalateScreen({ partner, setup, onBack, onNavigate, partnerData }) {
   ];
 
   return (
-    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="regulate" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
       <div style={{ padding: "0 44px 48px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 16 }} />
@@ -1587,7 +1659,7 @@ function LearnScreen({ partner, setup, onBack, onNavigate, partnerData }) {
   }
 
   return (
-    <AppScreen screen="reflect" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="reflect" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up">
         <button className="back-btn" onClick={onBack}>← Back</button>
         <span className="caption-text">{idx + 1} of {TABS_LIST.length}</span>
@@ -1971,7 +2043,7 @@ function AgreementScreen({ partner, onBack, onNavigate, partnerData }) {
   ];
 
   return (
-    <AppScreen screen="goals" layout="full" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
+    <AppScreen screen="goals" layout="sidebar" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
       <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
       <div style={{ padding: "0 44px 48px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
         <div style={{ height: 16 }} />
@@ -2039,17 +2111,17 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
         <div className="fade-up delay-2">
           <div className="section-label">Something is happening right now</div>
           <div className="tools-grid">
-            <div className="tool-card" onClick={() => onNavigate("escalate")}>
+            <div className="tool-card hot" onClick={() => onNavigate("escalate")}>
               <span className="tool-icon">🔥</span>
               <span className="tool-name">Escalating</span>
               <span className="tool-desc">We're in it right now</span>
             </div>
-            <div className="tool-card" onClick={() => onNavigate("regulate")}>
+            <div className="tool-card hot" onClick={() => onNavigate("regulate")}>
               <span className="tool-icon">🌿</span>
               <span className="tool-name">Regulate</span>
               <span className="tool-desc">I need to calm my nervous system</span>
             </div>
-            <div className="tool-card" onClick={() => onNavigate("repair")}>
+            <div className="tool-card hot" onClick={() => onNavigate("repair")}>
               <span className="tool-icon">🤝</span>
               <span className="tool-name">Repair</span>
               <span className="tool-desc">After the fight</span>
@@ -2061,18 +2133,18 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
         <div className="fade-up delay-3">
           <div className="section-label">Understand & prevent</div>
           <div className="tools-grid">
-            <div className="tool-card" onClick={() => onNavigate("learn")}>
+            <div className="tool-card learn" onClick={() => onNavigate("learn")}>
               <span className="tool-icon">🏗️</span>
               <span className="tool-name">Learn the System</span>
               <span className="tool-desc">WOT · Cycle map · EFT · Shared view</span>
             </div>
-            <div className="tool-card" onClick={() => onNavigate("reflect")}>
+            <div className="tool-card learn" onClick={() => onNavigate("reflect")}>
               <span className="tool-icon">🔍</span>
               <span className="tool-name">Reflect</span>
               <span className="tool-desc">Calm-moment pattern work</span>
             </div>
-            <div className="tool-card" onClick={() => onNavigate("agreement")}>
-              <span className="tool-icon">🤝</span>
+            <div className="tool-card learn" onClick={() => onNavigate("agreement")}>
+              <span className="tool-icon">📜</span>
               <span className="tool-name">Agreement</span>
               <span className="tool-desc">Our shared commitments</span>
             </div>
