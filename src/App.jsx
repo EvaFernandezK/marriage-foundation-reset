@@ -628,7 +628,11 @@ const REPAIR_SCRIPTS = {
 
 // ─── SHELL WRAPPER ─────────────────────────────────────────────────────────────
 // Applies per-screen gradient background + container
-function AppScreen({ screen, children, layout = "sidebar", partnerData, activeNav, onNavClick }) {
+// Module-level sign-out ref — set by App, read by AppScreen without prop drilling
+const _signOutRef = { current: null };
+
+function AppScreen({ screen, children, layout = "sidebar", partnerData, activeNav, onNavClick, onSignOut }) {
+  const resolvedSignOut = onSignOut || _signOutRef.current;
   const gradient = SCREEN_GRADIENTS[screen] || SCREEN_GRADIENTS.dashboard;
 
   const showSidebar = layout === "sidebar";
@@ -639,7 +643,7 @@ function AppScreen({ screen, children, layout = "sidebar", partnerData, activeNa
         <div className={`container fade-up`}>
           {showSidebar ? (
             <div className="layout-sidebar">
-              <Sidebar activeNav={activeNav} onNavClick={onNavClick} partnerData={partnerData} />
+              <Sidebar activeNav={activeNav} onNavClick={onNavClick} partnerData={partnerData} onSignOut={resolvedSignOut} />
               <div className="main-area">{children}</div>
             </div>
           ) : layout === "centered" ? (
@@ -653,7 +657,7 @@ function AppScreen({ screen, children, layout = "sidebar", partnerData, activeNa
   );
 }
 
-function Sidebar({ activeNav, onNavClick, partnerData }) {
+function Sidebar({ activeNav, onNavClick, partnerData, onSignOut }) {
   const navItems = [
     { id: "dashboard", icon: "⌂", label: "Dashboard" },
     { id: "setup",     icon: "◎", label: "My Setup" },
@@ -679,6 +683,15 @@ function Sidebar({ activeNav, onNavClick, partnerData }) {
           {partnerData ? `Connected with ${partnerData.name}` : "Waiting for partner\nto connect"}
         </div>
       </div>
+      <button onClick={onSignOut} style={{
+        background: "none", border: "none", cursor: "pointer",
+        fontFamily: "var(--sans)", fontSize: "0.62rem", fontWeight: 300,
+        color: "var(--ink-faint)", padding: "10px 0 4px", textAlign: "left",
+        letterSpacing: "0.06em", transition: "color 0.15s", width: "100%",
+      }}
+      onMouseEnter={e => e.target.style.color = "var(--ink-muted)"}
+      onMouseLeave={e => e.target.style.color = "var(--ink-faint)"}
+      >Sign out</button>
     </nav>
   );
 }
@@ -691,6 +704,7 @@ function GateScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [coupleCode, setCoupleCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -716,7 +730,8 @@ function GateScreen() {
 
   async function handleSignup() {
     reset();
-    if (!name.trim()) { setError("Please enter your name."); return; }
+    if (!name.trim()) { setError("Please enter your first name."); return; }
+    if (!lastName.trim()) { setError("Please enter your last name."); return; }
     if (!email.includes("@")) { setError("Please enter a valid email address."); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     if (!/^[A-Za-z0-9]{4,12}$/.test(coupleCode.trim())) { setError("Please enter a valid couple code (4–12 characters)."); return; }
@@ -724,42 +739,52 @@ function GateScreen() {
     try {
       const cleanEmail = email.trim().toLowerCase();
       const cleanName = name.trim();
+      const cleanLastName = lastName.trim();
       const cleanCode = coupleCode.trim().toUpperCase();
 
       // 1. Create Supabase auth account
       const { data: authData, error: signupErr } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
-        options: { data: { name: cleanName, couple_code: cleanCode } },
+        options: { data: { name: cleanName, last_name: cleanLastName, couple_code: cleanCode } },
       });
       if (signupErr) throw signupErr;
       const user = authData.user;
       if (!user) throw new Error("Could not create account. Please try again.");
 
-      // 2. Find or create couple record — use service-level insert with user context
+      // 2. Find or create couple record
       let coupleId;
-      const { data: existingCouple } = await supabase
+      const { data: existingCouple, error: lookupErr } = await supabase
         .from("couples").select("id").eq("confirmation_code", cleanCode).maybeSingle();
+      if (lookupErr) throw new Error("Couple lookup failed: " + lookupErr.message);
       if (existingCouple) {
         coupleId = existingCouple.id;
       } else {
         const { data: newCouple, error: coupleErr } = await supabase
           .from("couples").insert({ confirmation_code: cleanCode }).select("id").single();
-        if (coupleErr) throw new Error("Could not create couple record: " + coupleErr.message);
+        if (coupleErr) throw new Error("Couple insert failed (check RLS): " + coupleErr.message);
         coupleId = newCouple.id;
       }
 
-      // 3. Create partner record
-      const { data: newPartner, error: partnerErr } = await supabase
-        .from("partners")
-        .insert({ couple_id: coupleId, user_id: user.id, name: cleanName, email: cleanEmail })
-        .select("id").single();
-      if (partnerErr) throw new Error("Could not create profile: " + partnerErr.message);
+      // 3. Create partner record (only if one doesn't already exist for this user)
+      let newPartner;
+      const { data: existingPartner } = await supabase
+        .from("partners").select("id").eq("user_id", user.id).maybeSingle();
+      if (existingPartner) {
+        newPartner = existingPartner;
+      } else {
+        const { data: inserted, error: partnerErr } = await supabase
+          .from("partners")
+          .insert({ couple_id: coupleId, user_id: user.id, name: cleanName, last_name: cleanLastName, email: cleanEmail })
+          .select("id").single();
+        if (partnerErr) throw new Error("Partner insert failed (check RLS): " + partnerErr.message);
+        newPartner = inserted;
+      }
 
-      // 4. Create setup record using the returned partner id directly
+      // 4. Create setup record
       const { error: setupErr } = await supabase
         .from("setup").insert({ partner_id: newPartner.id, couple_id: coupleId });
-      if (setupErr) console.warn("Setup insert failed:", setupErr.message);
+      if (setupErr) throw new Error("Setup insert failed (check RLS): " + setupErr.message);
 
       // 5. All DB records created — now sign in so session fires cleanly
       const { error: loginErr } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
@@ -767,7 +792,9 @@ function GateScreen() {
       // onAuthStateChange will fire loadData() with partner record now in place
 
     } catch(e) {
-      setError(e.message || "Something went wrong.");
+      // Surface the real error — sign out any partial auth state so user can retry cleanly
+      await supabase.auth.signOut().catch(() => {});
+      setError(e.message || "Something went wrong. Please try again.");
       setLoading(false);
     }
   }
@@ -841,9 +868,15 @@ function GateScreen() {
                 </div>
               ) : (
                 <div>
-                  <div className="field" style={{ marginBottom: 14 }}>
-                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Your First Name</label>
-                    <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="How should we address you?" />
+                  <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>First Name</label>
+                      <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="First" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Last Name</label>
+                      <input style={inputStyle} value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Last" />
+                    </div>
                   </div>
                   <div className="field" style={{ marginBottom: 14 }}>
                     <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Email</label>
@@ -892,8 +925,10 @@ function GateScreen() {
 function OnboardingScreen({ user, onComplete }) {
   // Pre-populate from signup metadata if available
   const metaName = user?.user_metadata?.name || "";
+  const metaLastName = user?.user_metadata?.last_name || "";
   const metaCode = user?.user_metadata?.couple_code || user?.user_metadata?.confirmation_code || "";
   const [name, setName] = useState(metaName);
+  const [lastName, setLastName] = useState(metaLastName);
   const [coupleCode, setCoupleCode] = useState(metaCode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -911,11 +946,19 @@ function OnboardingScreen({ user, onComplete }) {
         if (ce) throw new Error("Could not create couple: " + ce.message);
         coupleId = nc.id;
       }
-      const { data: newPartner, error: pe } = await supabase
-        .from("partners")
-        .insert({ couple_id: coupleId, user_id: user.id, name: name.trim(), email: user.email })
-        .select("id").single();
-      if (pe) throw new Error("Could not save profile: " + pe.message);
+      // Guard against duplicates
+      let newPartner;
+      const { data: existingP } = await supabase.from("partners").select("id").eq("user_id", user.id).maybeSingle();
+      if (existingP) {
+        newPartner = existingP;
+      } else {
+        const { data: inserted, error: pe } = await supabase
+          .from("partners")
+          .insert({ couple_id: coupleId, user_id: user.id, name: name.trim(), last_name: lastName.trim(), email: user.email })
+          .select("id").single();
+        if (pe) throw new Error("Could not save profile: " + pe.message);
+        newPartner = inserted;
+      }
       const { error: se } = await supabase.from("setup").insert({ partner_id: newPartner.id, couple_id: coupleId });
       if (se) console.warn("Setup insert:", se.message);
       onComplete();
@@ -932,9 +975,15 @@ function OnboardingScreen({ user, onComplete }) {
           <div className="heading-md">One last step</div>
           <p className="body-text" style={{ margin: "10px 0 24px" }}>Confirm your name and couple code to enter your workbook.</p>
           {error && <div className="msg-error">{error}</div>}
-          <div className="field">
-            <label>Your first name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" onKeyDown={e => e.key === "Enter" && submit()} />
+          <div style={{ display: "flex", gap: 10 }}>
+            <div className="field" style={{ flex: 1 }}>
+              <label>First name</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="First" onKeyDown={e => e.key === "Enter" && submit()} />
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label>Last name</label>
+              <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Last" onKeyDown={e => e.key === "Enter" && submit()} />
+            </div>
           </div>
           {!metaCode && (
             <div className="field">
@@ -2896,10 +2945,10 @@ export default function App() {
   async function loadData(user) {
     setLoading(true);
     try {
-      const { data: p } = await supabase.from("partners").select("*").eq("user_id", user.id).single();
+      const { data: p } = await supabase.from("partners").select("*").eq("user_id", user.id).order("created_at", { ascending: true }).limit(1).maybeSingle();
       if (!p) { setNeedsOnboarding(true); setLoading(false); return; }
       setPartner(p);
-      const { data: s } = await supabase.from("setup").select("*").eq("partner_id", p.id).single();
+      const { data: s } = await supabase.from("setup").select("*").eq("partner_id", p.id).order("created_at", { ascending: true }).limit(1).maybeSingle();
       setSetup(s);
       const { data: l } = await supabase.from("activation_logs").select("*").eq("partner_id", p.id).order("created_at", { ascending: false }).limit(10);
       setLogs(l || []);
@@ -2930,6 +2979,13 @@ export default function App() {
     setScreen(id);
   }
 
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setPartner(null); setSetup(null); setLogs([]); setGlimmers([]); setPartnerData(null);
+    setScreen("dashboard"); setNeedsOnboarding(false);
+  }
+  _signOutRef.current = handleSignOut;
+
   // Loading
   if (loading) return (
     <div style={{ background: SCREEN_GRADIENTS.dashboard, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2941,14 +2997,14 @@ export default function App() {
   );
 
   if (!session) return <GateScreen />;
-  if (needsOnboarding) return <OnboardingScreen user={session.user} onComplete={() => { setNeedsOnboarding(false); loadData(session.user); }} />;
+  if (needsOnboarding) return <OnboardingScreen user={session.user} onComplete={async () => { await loadData(session.user); setNeedsOnboarding(false); setScreen("dashboard"); }} />;
   if (!partner) return (
     <div style={{ background: SCREEN_GRADIENTS.dashboard, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="spinner" />
     </div>
   );
 
-  const commonProps = { partner, setup, partnerData, onNavigate: handleNav };
+  const commonProps = { partner, setup, partnerData, onNavigate: handleNav, onSignOut: handleSignOut };
 
   return (
     <>
