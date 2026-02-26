@@ -683,79 +683,193 @@ function Sidebar({ activeNav, onNavClick, partnerData }) {
   );
 }
 
-// ─── GATE SCREEN ───────────────────────────────────────────────────────────────
+// ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
+// Two modes: "login" (returning user) and "signup" (new user with couple code)
+// Couple code links both partners automatically at signup — no magic links.
 function GateScreen() {
-  const [code, setCode] = useState("");
+  const [mode, setMode] = useState("login");       // "login" | "signup"
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [coupleCode, setCoupleCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [showPass, setShowPass] = useState(false);
 
-  async function submit() {
-    setError("");
-    if (!/^[A-Za-z0-9]{4,12}$/.test(code.trim())) { setError("Please enter a valid confirmation code."); return; }
+  function reset() { setError(""); }
+
+  async function handleLogin() {
+    reset();
     if (!email.includes("@")) { setError("Please enter a valid email address."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setLoading(true);
     try {
-      const { error: e } = await supabase.auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
-        options: { emailRedirectTo: window.location.origin, data: { confirmation_code: code.trim().toUpperCase() } },
-      });
+      const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (e) throw e;
-      setSent(true);
-    } catch(e) { setError(e.message || "Something went wrong."); }
-    finally { setLoading(false); }
+      // onAuthStateChange in App will handle the rest
+    } catch(e) {
+      setError(e.message === "Invalid login credentials"
+        ? "Email or password is incorrect. Try again."
+        : e.message || "Something went wrong.");
+    } finally { setLoading(false); }
+  }
+
+  async function handleSignup() {
+    reset();
+    if (!name.trim()) { setError("Please enter your name."); return; }
+    if (!email.includes("@")) { setError("Please enter a valid email address."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (!/^[A-Za-z0-9]{4,12}$/.test(coupleCode.trim())) { setError("Please enter a valid couple code (4–12 characters)."); return; }
+    setLoading(true);
+    try {
+      // 1. Create Supabase auth account
+      const { data: authData, error: signupErr } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: { data: { name: name.trim(), couple_code: coupleCode.trim().toUpperCase() } },
+      });
+      if (signupErr) throw signupErr;
+      const user = authData.user;
+      if (!user) throw new Error("Account created — check your email to confirm, then log in.");
+
+      // 2. Find or create the couple record by code
+      const code = coupleCode.trim().toUpperCase();
+      let coupleId;
+      const { data: existingCouple } = await supabase.from("couples").select("id").eq("confirmation_code", code).single();
+      if (existingCouple) {
+        coupleId = existingCouple.id;
+      } else {
+        const { data: newCouple, error: coupleErr } = await supabase.from("couples").insert({ confirmation_code: code }).select("id").single();
+        if (coupleErr) throw coupleErr;
+        coupleId = newCouple.id;
+      }
+
+      // 3. Create partner record
+      const { error: partnerErr } = await supabase.from("partners").insert({
+        couple_id: coupleId,
+        user_id: user.id,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+      });
+      if (partnerErr) throw partnerErr;
+
+      // 4. Create setup record
+      const { data: pd } = await supabase.from("partners").select("id").eq("user_id", user.id).single();
+      if (pd) await supabase.from("setup").insert({ partner_id: pd.id, couple_id: coupleId });
+
+      // Auth state change will fire and load the dashboard
+    } catch(e) {
+      setError(e.message || "Something went wrong.");
+    } finally { setLoading(false); }
   }
 
   const bg = SCREEN_GRADIENTS.gate;
-
-  if (sent) return (
-    <div className="app-shell" style={{ background: bg }}>
-      <div className="page-wrap">
-        <div className="container">
-          <div className="layout-centered" style={{ minHeight: 560 }}>
-            <div style={{ textAlign: "center", maxWidth: 400 }}>
-              <Logo size={52} />
-              <div style={{ marginTop: 24 }}>
-                <div className="eyebrow" style={{ marginBottom: 12 }}>Check your inbox</div>
-                <div className="heading-md">We sent you a link</div>
-                <p className="body-text" style={{ margin: "12px 0 24px" }}>
-                  A sign-in link was sent to <strong>{email}</strong>. Click it to open your workbook.
-                </p>
-                <button className="btn btn-ghost" onClick={() => setSent(false)}>Try a different email</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const inputStyle = {
+    width: "100%", background: "rgba(252,251,249,0.72)", border: "1px solid rgba(255,255,255,0.65)",
+    borderRadius: "var(--radius-sm)", padding: "13px 14px", fontFamily: "var(--sans)",
+    fontSize: "0.88rem", fontWeight: 300, color: "var(--ink)", outline: "none",
+    boxShadow: "0 1px 4px rgba(80,95,120,0.06), 0 1px 0 rgba(255,255,255,0.8) inset",
+    backdropFilter: "blur(8px)",
+  };
 
   return (
     <div className="app-shell" style={{ background: bg }}>
       <div className="page-wrap">
         <div className="container">
-          <div className="layout-centered" style={{ minHeight: 560 }}>
+          <div className="layout-centered" style={{ minHeight: 580 }}>
             <div style={{ maxWidth: 400, width: "100%" }}>
+
+              {/* Logo + title */}
               <div style={{ textAlign: "center", marginBottom: 36 }}>
                 <Logo size={52} />
                 <div className="eyebrow" style={{ marginTop: 20, marginBottom: 6 }}>Inner Pathways MFT</div>
                 <div className="heading" style={{ fontSize: "2rem" }}>Rewire the Fight</div>
                 <div className="subheading" style={{ marginTop: 6 }}>A therapist-designed system for couples</div>
               </div>
-              {error && <div className="msg-error">{error}</div>}
-              <div className="field">
-                <label>Confirmation Code</label>
-                <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="e.g. RTF2024" maxLength={12} />
+
+              {/* Mode toggle */}
+              <div style={{ display: "flex", background: "rgba(252,251,249,0.55)", borderRadius: 100, padding: 4, marginBottom: 28, border: "1px solid rgba(255,255,255,0.60)" }}>
+                {[["login","Sign In"],["signup","Create Account"]].map(([m, label]) => (
+                  <button key={m} onClick={() => { setMode(m); reset(); }} style={{
+                    flex: 1, padding: "9px 0", borderRadius: 100, border: "none", cursor: "pointer",
+                    fontFamily: "var(--sans)", fontSize: "0.76rem", fontWeight: mode === m ? 500 : 300,
+                    background: mode === m ? "var(--ink)" : "transparent",
+                    color: mode === m ? "rgba(252,251,249,0.95)" : "var(--ink-muted)",
+                    transition: "all 0.18s",
+                  }}>{label}</button>
+                ))}
               </div>
-              <div className="field">
-                <label>Your Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" />
-              </div>
-              <button className="btn btn-primary-wide" disabled={loading} onClick={submit} style={{ marginTop: 8 }}>
-                {loading ? "Sending link…" : "Send My Sign-In Link"}
-              </button>
-              <p className="caption-text" style={{ textAlign: "center", marginTop: 16 }}>We'll email you a secure link — no password needed.</p>
+
+              {error && <div className="msg-error" style={{ marginBottom: 16 }}>{error}</div>}
+
+              {mode === "login" ? (
+                <div>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Email</label>
+                    <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)}
+                      placeholder="you@email.com" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+                  </div>
+                  <div className="field" style={{ marginBottom: 20 }}>
+                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Password</label>
+                    <div style={{ position: "relative" }}>
+                      <input style={{ ...inputStyle, paddingRight: 44 }} type={showPass ? "text" : "password"} value={password}
+                        onChange={e => setPassword(e.target.value)} placeholder="Your password"
+                        onKeyDown={e => e.key === "Enter" && handleLogin()} />
+                      <button onClick={() => setShowPass(p => !p)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--ink-muted)", fontSize: "0.72rem" }}>
+                        {showPass ? "hide" : "show"}
+                      </button>
+                    </div>
+                  </div>
+                  <button className="btn btn-primary-wide" disabled={loading} onClick={handleLogin}>
+                    {loading ? "Signing in…" : "Sign In"}
+                  </button>
+                  <p style={{ textAlign: "center", marginTop: 18, fontSize: "0.72rem", fontWeight: 300, color: "var(--ink-muted)" }}>
+                    New user?{" "}
+                    <button onClick={() => { setMode("signup"); reset(); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink)", fontFamily: "var(--sans)", fontSize: "0.72rem", fontWeight: 400, textDecoration: "underline" }}>
+                      Create an account →
+                    </button>
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Your First Name</label>
+                    <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="How should we address you?" />
+                  </div>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Email</label>
+                    <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" />
+                  </div>
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Password</label>
+                    <div style={{ position: "relative" }}>
+                      <input style={{ ...inputStyle, paddingRight: 44 }} type={showPass ? "text" : "password"} value={password}
+                        onChange={e => setPassword(e.target.value)} placeholder="Create a password (min 6 characters)" />
+                      <button onClick={() => setShowPass(p => !p)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--ink-muted)", fontSize: "0.72rem" }}>
+                        {showPass ? "hide" : "show"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field" style={{ marginBottom: 20 }}>
+                    <label style={{ display: "block", fontSize: "0.62rem", fontWeight: 400, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 7 }}>Couple Code</label>
+                    <input style={inputStyle} value={coupleCode} onChange={e => setCoupleCode(e.target.value.toUpperCase())}
+                      placeholder="Code from your therapist" maxLength={12} />
+                    <p style={{ fontSize: "0.65rem", fontWeight: 300, color: "var(--ink-faint)", marginTop: 6, lineHeight: 1.5 }}>
+                      Both partners use the same code — it links your workbooks together automatically.
+                    </p>
+                  </div>
+                  <button className="btn btn-primary-wide" disabled={loading} onClick={handleSignup}>
+                    {loading ? "Creating account…" : "Create Account"}
+                  </button>
+                  <p style={{ textAlign: "center", marginTop: 18, fontSize: "0.72rem", fontWeight: 300, color: "var(--ink-muted)" }}>
+                    Already have an account?{" "}
+                    <button onClick={() => { setMode("login"); reset(); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink)", fontFamily: "var(--sans)", fontSize: "0.72rem", fontWeight: 400, textDecoration: "underline" }}>
+                      Sign in →
+                    </button>
+                  </p>
+                </div>
+              )}
+
             </div>
           </div>
         </div>
@@ -764,28 +878,28 @@ function GateScreen() {
   );
 }
 
-// ─── ONBOARDING SCREEN ─────────────────────────────────────────────────────────
+// ─── ONBOARDING SCREEN — no longer needed (handled in GateScreen signup flow)
+// Keeping as a safety fallback for users who created accounts via old magic link flow
 function OnboardingScreen({ user, onComplete }) {
   const [name, setName] = useState("");
-  const [partnerName, setPartnerName] = useState("");
-  const [partnerEmail, setPartnerEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const confirmationCode = user?.user_metadata?.confirmation_code || "DEFAULT";
 
   async function submit() {
     if (!name.trim()) { setError("Please enter your name."); return; }
     setError(""); setLoading(true);
     try {
+      // Try to use metadata couple_code if present, else create solo record
+      const code = user?.user_metadata?.couple_code || user?.user_metadata?.confirmation_code || "SOLO";
       let coupleId;
-      const { data: existing } = await supabase.from("couples").select("id").eq("confirmation_code", confirmationCode).single();
+      const { data: existing } = await supabase.from("couples").select("id").eq("confirmation_code", code).single();
       if (existing) { coupleId = existing.id; }
       else {
-        const { data: nc, error: ce } = await supabase.from("couples").insert({ confirmation_code: confirmationCode }).select("id").single();
+        const { data: nc, error: ce } = await supabase.from("couples").insert({ confirmation_code: code }).select("id").single();
         if (ce) throw ce;
         coupleId = nc.id;
       }
-      const { error: pe } = await supabase.from("partners").insert({ couple_id: coupleId, user_id: user.id, name: name.trim(), email: user.email, partner_email: partnerEmail.trim().toLowerCase() || null });
+      const { error: pe } = await supabase.from("partners").insert({ couple_id: coupleId, user_id: user.id, name: name.trim(), email: user.email });
       if (pe) throw pe;
       const { data: pd } = await supabase.from("partners").select("id").eq("user_id", user.id).single();
       if (pd) await supabase.from("setup").insert({ partner_id: pd.id, couple_id: coupleId });
@@ -796,30 +910,17 @@ function OnboardingScreen({ user, onComplete }) {
 
   return (
     <div className="app-shell" style={{ background: SCREEN_GRADIENTS.onboard }}>
-      <div className="page-wrap">
-        <div className="container">
-          <div className="layout-centered" style={{ minHeight: 580 }}>
-            <div style={{ maxWidth: 440, width: "100%" }}>
-              <div style={{ marginBottom: 32 }}><Logo size={44} /></div>
-              <div className="eyebrow">Welcome</div>
-              <div className="heading-md">Let's get you set up</div>
-              <p className="body-text" style={{ margin: "10px 0 28px" }}>This is your private space. Your partner will create their own.</p>
-              {error && <div className="msg-error">{error}</div>}
-              <div className="field"><label>Your first name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="How should we address you?" /></div>
-              <div className="divider" />
-              <p className="caption-text" style={{ marginBottom: 14 }}>Optional — invite your partner to connect their workbook.</p>
-              <div className="field"><label>Partner's first name</label><input value={partnerName} onChange={e => setPartnerName(e.target.value)} placeholder="Their name" /></div>
-              <div className="field"><label>Partner's email</label><input type="email" value={partnerEmail} onChange={e => setPartnerEmail(e.target.value)} placeholder="their@email.com" /></div>
-              <button className="btn btn-primary-wide" disabled={loading} onClick={submit} style={{ marginTop: 12 }}>
-                {loading ? "Setting up…" : "Continue"}
-              </button>
-              <button className="btn btn-ghost btn-full" onClick={submit} disabled={loading} style={{ marginTop: 10 }}>
-                Skip — I'll add this later
-              </button>
-            </div>
-          </div>
+      <div className="page-wrap"><div className="container"><div className="layout-centered" style={{ minHeight: 480 }}>
+        <div style={{ maxWidth: 400, width: "100%" }}>
+          <div style={{ marginBottom: 28 }}><Logo size={44} /></div>
+          <div className="eyebrow">Almost there</div>
+          <div className="heading-md">What's your name?</div>
+          <p className="body-text" style={{ margin: "10px 0 24px" }}>Just your first name — this is how we'll address you.</p>
+          {error && <div className="msg-error">{error}</div>}
+          <div className="field"><label>Your first name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" onKeyDown={e => e.key === "Enter" && submit()} /></div>
+          <button className="btn btn-primary-wide" disabled={loading} onClick={submit}>{loading ? "Setting up…" : "Enter my workbook"}</button>
         </div>
-      </div>
+      </div></div></div>
     </div>
   );
 }
@@ -2780,9 +2881,11 @@ export default function App() {
       setLogs(l || []);
       const { data: g } = await supabase.from("glimmers").select("*").eq("partner_id", p.id).order("created_at", { ascending: false }).limit(10);
       setGlimmers(g || []);
-      if (p.partner_email) {
-        const { data: pd } = await supabase.from("partners").select("*").eq("email", p.partner_email).eq("couple_id", p.couple_id).single();
-        if (pd) setPartnerData(pd);
+      // Find the other partner in the same couple (not the current user)
+      if (p.couple_id) {
+        const { data: allPartners } = await supabase.from("partners").select("*").eq("couple_id", p.couple_id);
+        const other = allPartners?.find(x => x.user_id !== user.id);
+        if (other) setPartnerData(other);
       }
       if (p.couple_id) {
         const ch = supabase.channel("couple-sync").on("postgres_changes", { event: "INSERT", schema: "public", table: "activation_logs", filter: `couple_id=eq.${p.couple_id}` }, () => loadData(user)).subscribe();
