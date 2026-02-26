@@ -1269,104 +1269,286 @@ function RegulateScreen({ partner, setup, onBack, onLog, onNavigate, partnerData
 
 // ─── REPAIR SCREEN ─────────────────────────────────────────────────────────────
 function RepairScreen({ partner, setup, onBack, onLog, onNavigate, partnerData }) {
-  const [phase, setPhase] = useState("check");
+  const [cardIndex, setCardIndex] = useState(0);
   const [activation, setActivation] = useState(5);
-  const [scriptPhase, setScriptPhase] = useState("opening");
-  const [selected, setSelected] = useState([]);
-  const [conflictNote, setConflictNote] = useState("");
-  const [missedMoment, setMissedMoment] = useState("");
+  const [selected, setSelected] = useState({});
+  const [logData, setLogData] = useState({ what: "", underneath: "", worked: "" });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [slideDir, setSlideDir] = useState("forward");
 
-  const PHASES = ["opening", "accountability", "softening", "request"];
-  const LABELS = { opening: "Start the conversation", accountability: "Take responsibility", softening: "Share the softer emotion", request: "Make a request" };
-
-  function toggleScript(t) { setSelected(p => p.includes(t) ? p.filter(s => s !== t) : [...p, t]); }
-
-  async function logRepair() {
-    try { await supabase.from("conflict_logs").insert({ couple_id: partner.couple_id, initiated_by: partner.id, what_happened: conflictNote.trim() || null, missed_moment: missedMoment.trim() || null, repair_completed: true }); }
-    catch(e) { console.error(e); }
-    onLog();
+  function toggleScript(phase, text) {
+    setSelected(p => ({ ...p, [phase]: p[phase] === text ? null : text }));
   }
 
-  if (phase === "check") return (
-    <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
-      <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
-      <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
-        <div style={{ height: 20 }} />
-        <div className="eyebrow">Repair</div>
-        <div className="heading-md">Before we start —<br/>where are you?</div>
-        <p className="body-text" style={{ margin: "10px 0 24px" }}>Repair only works when both partners are below a 5. If either of you is still flooded, regulate first.</p>
-        <div className="field">
-          <label>My activation right now</label>
-          <div className="slider-wrap">
-            <div className="slider-val" style={{ color: activationColor(activation) }}>{activation}</div>
-            <input type="range" min="1" max="10" value={activation} onChange={e => setActivation(parseInt(e.target.value))} />
-            <div className="slider-labels"><span>Calm (1)</span><span>Flooded (10)</span></div>
+  function go(dir) {
+    setSlideDir(dir > 0 ? "forward" : "back");
+    setCardIndex(i => i + dir);
+  }
+
+  async function saveRepair() {
+    setSaving(true);
+    try {
+      await supabase.from("conflict_logs").insert({
+        couple_id: partner.couple_id,
+        initiated_by: partner.id,
+        what_happened: logData.what.trim() || null,
+        underneath: logData.underneath.trim() || null,
+        what_worked: logData.worked.trim() || null,
+        repair_completed: true,
+      });
+      setSaved(true);
+      setTimeout(() => onLog(), 1400);
+    } catch(e) { console.error(e); setSaving(false); }
+  }
+
+  // ── Build the card deck ──────────────────────────────────────────────────────
+  const SCRIPT_PHASES = [
+    {
+      id: "opening",
+      label: "Start the conversation",
+      scripts: REPAIR_SCRIPTS.opening,
+    },
+    {
+      id: "accountability",
+      label: "Take responsibility",
+      scripts: REPAIR_SCRIPTS.accountability,
+    },
+    {
+      id: "softening",
+      label: "Share the softer emotion",
+      scripts: REPAIR_SCRIPTS.softening,
+    },
+    {
+      id: "request",
+      label: "Make a request",
+      scripts: REPAIR_SCRIPTS.request,
+    },
+  ];
+
+  const FOUR_RS = [
+    { r: "Regret", desc: "Express genuine remorse for the impact, regardless of intention.", example: ""I'm really sorry that what I said hurt you. That was not okay."" },
+    { r: "Responsibility", desc: "Own what you did without minimizing or deflecting. Just the behavior.", example: ""I was sarcastic and I shut down the conversation. That's on me."" },
+    { r: "Recognition", desc: "Acknowledge what your partner experienced — their feelings, their perspective.", example: ""I can see why you felt dismissed. Your point was valid."" },
+    { r: "Remedy", desc: "Offer what you'll do differently. Make it concrete and small.", example: ""Next time I feel frustrated, I'm going to ask for a pause before I respond."" },
+  ];
+
+  const cards = [
+    // ── Card 0: Activation gate ──
+    {
+      key: "check",
+      render: () => (
+        <div>
+          <div className="eyebrow">Before we start</div>
+          <div className="heading-md">Where are you right now?</div>
+          <p className="body-text" style={{ margin: "10px 0 24px" }}>
+            Repair only works when both partners are below a 5. If you're still flooded, regulate first.
+          </p>
+          <div className="field">
+            <label>My activation level</label>
+            <div className="slider-wrap">
+              <div className="slider-val" style={{ color: activationColor(activation) }}>{activation}</div>
+              <input type="range" min="1" max="10" value={activation}
+                onChange={e => setActivation(parseInt(e.target.value))} />
+              <div className="slider-labels"><span>Calm (1)</span><span>Flooded (10)</span></div>
+            </div>
+          </div>
+          {activation > 5 ? (
+            <>
+              <div className="insight">At {activation}/10, repair is hard. Your nervous system is still in protect mode.</div>
+              <div style={{ height: 16 }} />
+              <button className="btn btn-outline btn-full" onClick={onBack}>Regulate first →</button>
+              <button className="btn btn-ghost btn-full" style={{ marginTop: 8 }} onClick={() => go(1)}>I want to try anyway</button>
+            </>
+          ) : (
+            <>
+              <div className="insight">Good. At {activation}/10, real conversation is possible.</div>
+              <div style={{ height: 20 }} />
+              <button className="btn btn-primary-wide" onClick={() => go(1)}>Begin repair →</button>
+            </>
+          )}
+        </div>
+      ),
+    },
+
+    // ── Card 1: Why repair matters ──
+    {
+      key: "why",
+      render: () => (
+        <div>
+          <div className="eyebrow">Repair Framework</div>
+          <div className="heading-md">Why repair matters</div>
+          <p className="body-text" style={{ margin: "12px 0 16px", lineHeight: 1.65 }}>
+            Every relationship has ruptures. What separates secure couples from disconnected ones isn't the absence of conflict — it's the quality of repair.
+          </p>
+          <div className="insight">
+            "Repair within 24 hours. The longer you wait, the more the narrative solidifies and resentment pools beneath the surface."
+          </div>
+          <div style={{ marginTop: 20 }}>
+            <div className="section-label" style={{ marginBottom: 10 }}>The 5-step process</div>
+            {[
+              { num: 1, title: "Name the behavior", desc: "Be specific — not 'I was rude' but 'I raised my voice and interrupted you.'" },
+              { num: 2, title: "Take ownership", desc: "No justification. No 'but you…'. Ownership without conditions." },
+              { num: 3, title: "Acknowledge the impact", desc: "Even if unintended — impact matters more than intention." },
+              { num: 4, title: "Name the feeling underneath", desc: "What were you actually feeling? Fear? Rejection? Name the real thing." },
+              { num: 5, title: "Offer reconnection", desc: "Not what you want to say — what your partner needs to receive right now." },
+            ].map(r => (
+              <div key={r.num} style={{ display: "flex", gap: 14, marginBottom: 14, alignItems: "flex-start" }}>
+                <div style={{
+                  width: 26, height: 26, borderRadius: "50%", background: "var(--ink)",
+                  color: "rgba(252,251,249,0.95)", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "var(--serif)", fontSize: "0.78rem", flexShrink: 0, marginTop: 1
+                }}>{r.num}</div>
+                <div>
+                  <div style={{ fontFamily: "var(--serif)", fontSize: "0.95rem", fontWeight: 400, color: "var(--ink)", marginBottom: 3 }}>{r.title}</div>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 300, color: "var(--ink-muted)", lineHeight: 1.55 }}>{r.desc}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-        {activation > 5 ? (
-          <div>
-            <div className="card" style={{ marginBottom: 14 }}>
-              <div className="heading-sm">You're still activated</div>
-              <p className="body-text">At {activation}/10, meaningful repair is hard. Try regulating first.</p>
+      ),
+    },
+
+    // ── Cards 2-5: Script phases (one per card) ──
+    ...SCRIPT_PHASES.map((phase, pi) => ({
+      key: `script_${phase.id}`,
+      render: () => (
+        <div>
+          <div className="eyebrow">Step {pi + 2} of 6</div>
+          <div className="heading-md">{phase.label}</div>
+          <p className="body-text" style={{ margin: "8px 0 18px" }}>Choose the phrase that feels closest to true for you right now.</p>
+          {phase.scripts.map(s => (
+            <div
+              key={s.text}
+              className={`script-card${selected[phase.id] === s.text ? " selected" : ""}`}
+              onClick={() => toggleScript(phase.id, s.text)}
+            >
+              <div className="script-text">"{s.text}"</div>
+              <div className="script-ctx">{s.ctx}</div>
             </div>
-            <button className="btn btn-outline btn-full" onClick={onBack}>Regulate first</button>
-            <button className="btn btn-ghost btn-full" onClick={() => setPhase("scripts")} style={{ marginTop: 10 }}>I want to try anyway</button>
+          ))}
+        </div>
+      ),
+    })),
+
+    // ── Card 6: The 4 Rs ──
+    {
+      key: "fourRs",
+      render: () => (
+        <div>
+          <div className="eyebrow">Deepen the repair</div>
+          <div className="heading-md">The 4 Rs of Apology</div>
+          <p className="body-text" style={{ margin: "10px 0 18px" }}>These are language builders — not a script. Use them to form your own words.</p>
+          {FOUR_RS.map((item) => (
+            <div key={item.r} style={{
+              background: "rgba(252,251,249,0.65)", border: "1px solid rgba(255,255,255,0.65)",
+              borderRadius: "var(--radius)", padding: "14px 16px", marginBottom: 10,
+              backdropFilter: "blur(10px)"
+            }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: "50%",
+                  background: "rgba(30,33,40,0.08)", border: "1px solid rgba(30,33,40,0.12)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "var(--serif)", fontSize: "0.92rem", fontWeight: 400,
+                  color: "var(--ink)", flexShrink: 0
+                }}>{item.r[0]}</div>
+                <div>
+                  <div style={{ fontFamily: "var(--serif)", fontSize: "0.95rem", fontWeight: 400, color: "var(--ink)", marginBottom: 4 }}>{item.r}</div>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 300, color: "var(--ink-muted)", lineHeight: 1.55, marginBottom: 6 }}>{item.desc}</div>
+                  <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: "0.82rem", color: "var(--ink-soft)", lineHeight: 1.5 }}>{item.example}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+    },
+
+    // ── Card 7: Log it ──
+    {
+      key: "log",
+      render: () => (
+        <div>
+          <div className="eyebrow">Log the repair</div>
+          <div className="heading-md">Capture what happened</div>
+          <p className="body-text" style={{ margin: "10px 0 22px" }}>Optional but powerful. Patterns only become visible when you name them.</p>
+          <div className="field">
+            <label>What was the conflict about?</label>
+            <textarea value={logData.what} onChange={e => setLogData(d => ({ ...d, what: e.target.value }))}
+              placeholder="What triggered it? What happened?" rows={3} />
           </div>
-        ) : (
-          <div>
-            <div className="insight">Good. At {activation}/10, you're in a place where real conversation is possible.</div>
-            <div style={{ height: 20 }} />
-            <button className="btn btn-primary-wide" onClick={() => setPhase("scripts")}>Start the repair process</button>
+          <div className="field">
+            <label>What was underneath it for you?</label>
+            <textarea value={logData.underneath} onChange={e => setLogData(d => ({ ...d, underneath: e.target.value }))}
+              placeholder="The real feeling beneath the reaction…" rows={3} />
+          </div>
+          <div className="field">
+            <label>What helped?</label>
+            <textarea value={logData.worked} onChange={e => setLogData(d => ({ ...d, worked: e.target.value }))}
+              placeholder="What moved things toward safety?" rows={2} />
+          </div>
+          {saved ? (
+            <div className="msg-success">Repair logged. Well done. ✦</div>
+          ) : (
+            <button className="btn btn-primary-wide" disabled={saving} onClick={saveRepair}>
+              {saving ? "Saving…" : "Save and finish"}
+            </button>
+          )}
+          <button className="btn btn-ghost btn-full" style={{ marginTop: 8 }} onClick={onLog}>Skip and return home</button>
+        </div>
+      ),
+    },
+  ];
+
+  const total = cards.length;
+  const card = cards[cardIndex];
+  const isFirst = cardIndex === 0;
+  const isLast = cardIndex === total - 1;
+
+  return (
+    <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+      {/* Top bar */}
+      <div className="top-bar fade-up">
+        <button className="back-btn" onClick={() => isFirst ? onBack() : go(-1)}>← Back</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: "0.65rem", fontWeight: 300, color: "var(--ink-muted)", letterSpacing: "0.06em" }}>
+            {cardIndex + 1} / {total}
+          </span>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ padding: "10px 44px 0" }}>
+        <div style={{ height: 3, background: "rgba(120,130,155,0.12)", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{
+            height: "100%", borderRadius: 2, background: "var(--ink)",
+            width: `${((cardIndex + 1) / total) * 100}%`,
+            transition: "width 0.35s cubic-bezier(0.22,1,0.36,1)"
+          }} />
+        </div>
+      </div>
+
+      {/* Card area */}
+      <div
+        key={card.key}
+        className="fade-up delay-1"
+        style={{ padding: "20px 44px 44px", flex: 1, overflowY: "auto" }}
+      >
+        {card.render()}
+
+        {/* Navigation footer — show Next on all non-check cards except the last */}
+        {!isLast && cardIndex > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <button className="btn btn-primary-wide" onClick={() => go(1)}>
+              {cardIndex === total - 2 ? "Log this repair →" : "Next →"}
+            </button>
           </div>
         )}
       </div>
     </AppScreen>
   );
-
-  if (phase === "scripts") {
-    const idx = PHASES.indexOf(scriptPhase);
-    return (
-      <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
-        <div className="top-bar fade-up">
-          <button className="back-btn" onClick={() => idx === 0 ? setPhase("check") : setScriptPhase(PHASES[idx - 1])}>← Back</button>
-          <span className="caption-text">{idx + 1} of {PHASES.length}</span>
-        </div>
-        <div style={{ padding: "0 44px 44px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
-          <div style={{ height: 16 }} />
-          <div className="step-dots">{PHASES.map((p, i) => <div key={p} className={`step-dot${i < idx ? " done" : i === idx ? " active" : ""}`} />)}</div>
-          <div className="eyebrow">{LABELS[scriptPhase]}</div>
-          <div className="heading-md" style={{ marginBottom: 16 }}>Choose a phrase that feels true</div>
-          <p className="body-text" style={{ marginBottom: 18 }}>These are starting points. Use the one that feels closest.</p>
-          {REPAIR_SCRIPTS[scriptPhase].map(s => (
-            <div key={s.text} className={`script-card${selected.includes(s.text) ? " selected" : ""}`} onClick={() => toggleScript(s.text)}>
-              <div className="script-text">"{s.text}"</div>
-              <div className="script-ctx">{s.ctx}</div>
-            </div>
-          ))}
-          <div style={{ height: 20 }} />
-          {idx < PHASES.length - 1
-            ? <button className="btn btn-primary-wide" onClick={() => setScriptPhase(PHASES[idx + 1])}>Continue</button>
-            : <button className="btn btn-primary-wide" onClick={() => setPhase("log")}>Log this repair</button>
-          }
-        </div>
-      </AppScreen>
-    );
-  }
-
-  if (phase === "log") return (
-    <AppScreen screen="repair" layout="sidebar" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
-      <div style={{ padding: "36px 44px 44px", flex: 1 }} className="fade-up">
-        <div className="eyebrow">Log the conflict</div>
-        <div className="heading-md">What happened?</div>
-        <div className="field" style={{ marginTop: 20 }}><label>What was the conflict about?</label><textarea value={conflictNote} onChange={e => setConflictNote(e.target.value)} placeholder="What triggered it? What happened? How did it end?" rows={4} /></div>
-        <div className="field"><label>Where was the missed intervention moment?</label><textarea value={missedMoment} onChange={e => setMissedMoment(e.target.value)} placeholder="When could you have caught it earlier? What did you notice in your body?" rows={4} /></div>
-        <div style={{ height: 16 }} />
-        <button className="btn btn-primary-wide" onClick={logRepair}>Save and return home</button>
-      </div>
-    </AppScreen>
-  );
-
-  return null;
 }
 
 // ─── REFLECT SCREEN ────────────────────────────────────────────────────────────
