@@ -98,15 +98,16 @@ const CSS = `
   /* ── SIDEBAR ── */
   .sidebar {
     position: sticky;
-    top: 0;
-    height: 100vh;
-    min-height: 600px;
+    top: 16px;
+    height: calc(100vh - 48px);
+    min-height: 500px;
     padding: 36px 18px 28px;
     border-right: 1px solid rgba(255,255,255,0.40);
     display: flex;
     flex-direction: column;
     gap: 3px;
     background: transparent;
+    align-self: flex-start;
   }
 
   .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; padding: 0 6px; }
@@ -159,8 +160,8 @@ const CSS = `
   .layout-sidebar {
     display: grid;
     grid-template-columns: 210px 1fr;
-    grid-template-rows: 1fr;
-    min-height: 680px;
+    grid-template-rows: auto;
+    min-height: 0;
   }
   .layout-centered {
     display: flex; align-items: center; justify-content: center;
