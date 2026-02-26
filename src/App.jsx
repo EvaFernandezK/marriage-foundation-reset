@@ -722,45 +722,54 @@ function GateScreen() {
     if (!/^[A-Za-z0-9]{4,12}$/.test(coupleCode.trim())) { setError("Please enter a valid couple code (4–12 characters)."); return; }
     setLoading(true);
     try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = name.trim();
+      const cleanCode = coupleCode.trim().toUpperCase();
+
       // 1. Create Supabase auth account
       const { data: authData, error: signupErr } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
-        options: { data: { name: name.trim(), couple_code: coupleCode.trim().toUpperCase() } },
+        options: { data: { name: cleanName, couple_code: cleanCode } },
       });
       if (signupErr) throw signupErr;
       const user = authData.user;
-      if (!user) throw new Error("Account created — check your email to confirm, then log in.");
+      if (!user) throw new Error("Could not create account. Please try again.");
 
-      // 2. Find or create the couple record by code
-      const code = coupleCode.trim().toUpperCase();
+      // 2. Find or create couple record — use service-level insert with user context
       let coupleId;
-      const { data: existingCouple } = await supabase.from("couples").select("id").eq("confirmation_code", code).single();
+      const { data: existingCouple } = await supabase
+        .from("couples").select("id").eq("confirmation_code", cleanCode).maybeSingle();
       if (existingCouple) {
         coupleId = existingCouple.id;
       } else {
-        const { data: newCouple, error: coupleErr } = await supabase.from("couples").insert({ confirmation_code: code }).select("id").single();
-        if (coupleErr) throw coupleErr;
+        const { data: newCouple, error: coupleErr } = await supabase
+          .from("couples").insert({ confirmation_code: cleanCode }).select("id").single();
+        if (coupleErr) throw new Error("Could not create couple record: " + coupleErr.message);
         coupleId = newCouple.id;
       }
 
       // 3. Create partner record
-      const { error: partnerErr } = await supabase.from("partners").insert({
-        couple_id: coupleId,
-        user_id: user.id,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-      });
-      if (partnerErr) throw partnerErr;
+      const { data: newPartner, error: partnerErr } = await supabase
+        .from("partners")
+        .insert({ couple_id: coupleId, user_id: user.id, name: cleanName, email: cleanEmail })
+        .select("id").single();
+      if (partnerErr) throw new Error("Could not create profile: " + partnerErr.message);
 
-      // 4. Create setup record
-      const { data: pd } = await supabase.from("partners").select("id").eq("user_id", user.id).single();
-      if (pd) await supabase.from("setup").insert({ partner_id: pd.id, couple_id: coupleId });
+      // 4. Create setup record using the returned partner id directly
+      const { error: setupErr } = await supabase
+        .from("setup").insert({ partner_id: newPartner.id, couple_id: coupleId });
+      if (setupErr) console.warn("Setup insert failed:", setupErr.message);
 
-      // Auth state change will fire and load the dashboard
+      // 5. All DB records created — now sign in so session fires cleanly
+      const { error: loginErr } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+      if (loginErr) throw loginErr;
+      // onAuthStateChange will fire loadData() with partner record now in place
+
     } catch(e) {
       setError(e.message || "Something went wrong.");
-    } finally { setLoading(false); }
+      setLoading(false);
+    }
   }
 
   const bg = SCREEN_GRADIENTS.gate;
@@ -881,7 +890,11 @@ function GateScreen() {
 // ─── ONBOARDING SCREEN — no longer needed (handled in GateScreen signup flow)
 // Keeping as a safety fallback for users who created accounts via old magic link flow
 function OnboardingScreen({ user, onComplete }) {
-  const [name, setName] = useState("");
+  // Pre-populate from signup metadata if available
+  const metaName = user?.user_metadata?.name || "";
+  const metaCode = user?.user_metadata?.couple_code || user?.user_metadata?.confirmation_code || "";
+  const [name, setName] = useState(metaName);
+  const [coupleCode, setCoupleCode] = useState(metaCode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -889,20 +902,22 @@ function OnboardingScreen({ user, onComplete }) {
     if (!name.trim()) { setError("Please enter your name."); return; }
     setError(""); setLoading(true);
     try {
-      // Try to use metadata couple_code if present, else create solo record
-      const code = user?.user_metadata?.couple_code || user?.user_metadata?.confirmation_code || "SOLO";
+      const cleanCode = coupleCode.trim().toUpperCase() || "SOLO";
       let coupleId;
-      const { data: existing } = await supabase.from("couples").select("id").eq("confirmation_code", code).single();
+      const { data: existing } = await supabase.from("couples").select("id").eq("confirmation_code", cleanCode).maybeSingle();
       if (existing) { coupleId = existing.id; }
       else {
-        const { data: nc, error: ce } = await supabase.from("couples").insert({ confirmation_code: code }).select("id").single();
-        if (ce) throw ce;
+        const { data: nc, error: ce } = await supabase.from("couples").insert({ confirmation_code: cleanCode }).select("id").single();
+        if (ce) throw new Error("Could not create couple: " + ce.message);
         coupleId = nc.id;
       }
-      const { error: pe } = await supabase.from("partners").insert({ couple_id: coupleId, user_id: user.id, name: name.trim(), email: user.email });
-      if (pe) throw pe;
-      const { data: pd } = await supabase.from("partners").select("id").eq("user_id", user.id).single();
-      if (pd) await supabase.from("setup").insert({ partner_id: pd.id, couple_id: coupleId });
+      const { data: newPartner, error: pe } = await supabase
+        .from("partners")
+        .insert({ couple_id: coupleId, user_id: user.id, name: name.trim(), email: user.email })
+        .select("id").single();
+      if (pe) throw new Error("Could not save profile: " + pe.message);
+      const { error: se } = await supabase.from("setup").insert({ partner_id: newPartner.id, couple_id: coupleId });
+      if (se) console.warn("Setup insert:", se.message);
       onComplete();
     } catch(e) { setError(e.message || "Something went wrong."); }
     finally { setLoading(false); }
@@ -914,10 +929,19 @@ function OnboardingScreen({ user, onComplete }) {
         <div style={{ maxWidth: 400, width: "100%" }}>
           <div style={{ marginBottom: 28 }}><Logo size={44} /></div>
           <div className="eyebrow">Almost there</div>
-          <div className="heading-md">What's your name?</div>
-          <p className="body-text" style={{ margin: "10px 0 24px" }}>Just your first name — this is how we'll address you.</p>
+          <div className="heading-md">One last step</div>
+          <p className="body-text" style={{ margin: "10px 0 24px" }}>Confirm your name and couple code to enter your workbook.</p>
           {error && <div className="msg-error">{error}</div>}
-          <div className="field"><label>Your first name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" onKeyDown={e => e.key === "Enter" && submit()} /></div>
+          <div className="field">
+            <label>Your first name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" onKeyDown={e => e.key === "Enter" && submit()} />
+          </div>
+          {!metaCode && (
+            <div className="field">
+              <label>Couple Code</label>
+              <input value={coupleCode} onChange={e => setCoupleCode(e.target.value.toUpperCase())} placeholder="Code from your therapist" maxLength={12} />
+            </div>
+          )}
           <button className="btn btn-primary-wide" disabled={loading} onClick={submit}>{loading ? "Setting up…" : "Enter my workbook"}</button>
         </div>
       </div></div></div>
