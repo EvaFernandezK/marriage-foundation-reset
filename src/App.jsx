@@ -1,2417 +1,2291 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-// ─── STORAGE ───────────────────────────────────────────────────────────────────
-// Private data: stays on this device only (window.storage personal)
-// Shared data:  synced between both partners via couple code (window.storage shared)
-const IDENTITY_KEY  = "mfr_identity_v4";
-const PRIVATE_KEY   = "mfr_private_v4";
-
-function loadIdentity() {
-  try { const r = localStorage.getItem(IDENTITY_KEY); return r ? JSON.parse(r) : null; }
-  catch { return null; }
-}
-function saveIdentity(id) {
-  try { localStorage.setItem(IDENTITY_KEY, JSON.stringify(id)); } catch {}
-}
-function loadPrivate() {
-  try { const r = localStorage.getItem(PRIVATE_KEY); return r ? JSON.parse(r) : {}; }
-  catch { return {}; }
-}
-function savePrivate(d) {
-  try { localStorage.setItem(PRIVATE_KEY, JSON.stringify(d)); } catch {}
-}
-
-// Shared data keys (namespaced by couple code so only linked partners share)
-function sharedKey(coupleCode) { return `mfr_shared_${coupleCode}`; }
-
-async function loadShared(coupleCode) {
-  if (!coupleCode) return {};
-  try {
-    const result = await window.storage.get(sharedKey(coupleCode), true);
-    return result ? JSON.parse(result.value) : {};
-  } catch { return {}; }
-}
-
-async function saveShared(coupleCode, data) {
-  if (!coupleCode) return;
-  try {
-    await window.storage.set(sharedKey(coupleCode), JSON.stringify(data), true);
-  } catch(e) { console.warn("Shared save failed:", e); }
-}
-
-// Generate a short readable couple code: WORD-NNNN
-function generateCoupleCode() {
-  const words = ["ROSE","SAGE","OAK","TIDE","DAWN","MIST","GOLD","PINE","REED","CLAY","FERN","LARK"];
-  const word = words[Math.floor(Math.random() * words.length)];
-  const num = String(Math.floor(1000 + Math.random() * 9000));
-  return `${word}-${num}`;
-}
+// ─── SUPABASE ──────────────────────────────────────────────────────────────────
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+);
 
 // ─── STYLES ────────────────────────────────────────────────────────────────────
-const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Jost:wght@300;400;500;600;700&display=swap');
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --cream:          #F4F1EC;
-    --ink:            #1C1C1C;
-    --depth:          #2C3540;
-    --lavender:       #E4E1F0;
-    --steel:          #C9D1DC;
-    --blush:          #C49A8A;
-    --blush-light:    rgba(196,154,138,0.15);
-    --blush-mid:      rgba(196,154,138,0.3);
-    --plum:           #484659;
-    --escalation-bg:  #F0EEF8;
-    --rose:           #C4826A;
-    --rose-light:     rgba(196,130,106,0.12);
-    --rose-border:    rgba(196,130,106,0.3);
-    --sage:           #7A9E8E;
-    --sage-light:     rgba(122,158,142,0.12);
-    --sage-border:    rgba(122,158,142,0.3);
-    --gold:           #B8995A;
-    --gold-light:     rgba(184,153,90,0.12);
-    --gold-border:    rgba(184,153,90,0.3);
-    --surface:        rgba(255,255,255,0.55);
-    --surface-soft:   rgba(255,255,255,0.35);
-    --surface-solid:  rgba(255,255,255,0.82);
-    --sand:           rgba(234,228,216,0.7);
-    --border:         rgba(200,192,178,0.5);
-    --border-solid:   #D8D0C4;
-    --charcoal:       var(--ink);
-    --charcoal-mid:   #3A3A3A;
-    --charcoal-light: #767676;
-    --white:          rgba(255,255,255,0.82);
-    --font-serif: 'EB Garamond', Georgia, serif;
-    --font-sans:  'Jost', sans-serif;
-    --radius:     10px;
-    --radius-lg:  18px;
-    --radius-xl:  28px;
-    --shadow-sm: 0 2px 8px rgba(28,28,28,0.06);
-    --shadow-md: 0 6px 24px rgba(28,28,28,0.10);
-    --shadow-lg: 0 12px 40px rgba(28,28,28,0.13);
-    --gradient-atm:
-      radial-gradient(ellipse 80% 60% at 20% 20%, rgba(228,225,240,0.22) 0%, transparent 65%),
-      radial-gradient(ellipse 60% 50% at 80% 80%, rgba(201,209,220,0.18) 0%, transparent 60%),
-      radial-gradient(ellipse 50% 70% at 60% 10%, rgba(196,154,138,0.08) 0%, transparent 55%);
-  }
-
-  /* ── BASE ── */
-  html, body { height: 100%; background: var(--cream); color: var(--ink); font-family: var(--font-sans); font-weight: 400; -webkit-font-smoothing: antialiased; }
-  #root { min-height: 100vh; }
-  .app { min-height: 100vh; display: flex; flex-direction: column; background: var(--cream); background-image: var(--gradient-atm); background-attachment: fixed; }
-  .app.mode-escalate { background: var(--escalation-bg); background-image: var(--gradient-atm); }
-  .app.mode-escalate .nav { display: none; }
-
-  /* ── NAV ── */
-  .nav { background: rgba(244,241,236,0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); padding: 0 24px; height: 62px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow-sm); }
-  .nav-brand { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-  .nav-logo { width: 32px; height: 32px; }
-  .nav-title { font-family: var(--font-serif); font-size: 1.15rem; color: var(--ink); }
-  .nav-subtitle { font-size: 0.66rem; color: var(--charcoal-light); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
-  .nav-right { display: flex; align-items: center; gap: 12px; }
-  .partner-badge { font-size: 0.7rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.04em; }
-  .partner-badge.p1 { background: var(--rose-light); color: var(--rose); border: 1px solid var(--rose-border); }
-  .partner-badge.p2 { background: var(--sage-light); color: var(--sage); border: 1px solid var(--sage-border); }
-  .progress-bar-track { width: 80px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
-  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--blush), var(--sage)); border-radius: 2px; transition: width 0.5s ease; }
-  .nav-progress { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--charcoal-light); }
-
-  /* ── LAYOUT ── */
-  .main { flex: 1; padding: 32px 24px 64px; max-width: 800px; margin: 0 auto; width: 100%; }
-  .footer { text-align: center; padding: 22px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--charcoal-light); background: rgba(244,241,236,0.6); }
-
-  /* ── ANIMATIONS ── */
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  .fade-in { animation: fadeIn 0.35s ease forwards; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  @keyframes breathe { 0%,100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.12); opacity: 0.9; } }
-
-  /* ── GLASS SURFACE — the unified card language ── */
-  .card {
-    background: var(--surface);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 22px;
-    box-shadow: var(--shadow-sm);
-  }
-  .card + .card { margin-top: 12px; }
-  .card-soft {
-    background: var(--surface-soft);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 18px;
-  }
-
-  /* ── HOME SCREEN ── */
-  .entry-screen { text-align: center; padding: 52px 0 28px; }
-  .entry-eyebrow { font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--charcoal-light); font-weight: 600; margin-bottom: 16px; font-family: var(--font-sans); }
-  .entry-heading { font-family: var(--font-serif); font-size: clamp(2.4rem, 6vw, 3.2rem); font-weight: 500; color: var(--ink); line-height: 1.15; margin-bottom: 14px; }
-  .entry-heading em { font-style: italic; color: var(--blush); }
-  .entry-sub { font-size: 0.92rem; color: var(--charcoal-light); margin-bottom: 44px; line-height: 1.75; max-width: 460px; margin-left: auto; margin-right: auto; font-weight: 300; }
-  .entry-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
-  .entry-footer { font-family: var(--font-serif); font-style: italic; font-size: 0.85rem; color: var(--charcoal-light); }
-
-  /* ── PATH CARDS — 3-tier entry gate ── */
-  .path-cards { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 520px; margin: 0 auto 32px; }
-  .path-card {
-    background: var(--surface);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 22px 26px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    transition: all 0.22s ease;
-    text-align: left;
-    box-shadow: var(--shadow-sm);
-  }
-  .path-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-  .path-card.escalate { background: var(--depth); border-color: var(--depth); border-left: 4px solid var(--blush); }
-  .path-card.escalate:hover { background: #36424F; box-shadow: 0 8px 28px rgba(44,53,64,0.32); }
-  .path-card.escalate .path-card-title { color: #ffffff; }
-  .path-card.escalate .path-card-desc { color: rgba(255,255,255,0.65); }
-  .path-card.escalate .path-card-arrow { color: rgba(255,255,255,0.4); }
-  .path-card.repair { background: var(--surface); border-color: var(--border); }
-  .path-card.repair:hover { background: rgba(255,255,255,0.72); border-color: var(--sage-border); }
-  .path-card.learn { background: var(--surface-soft); border-color: var(--border); }
-  .path-card.learn:hover { background: var(--surface); border-color: var(--gold-border); }
-  .path-card-text { flex: 1; }
-  .path-card-title { font-family: var(--font-sans); font-weight: 600; font-size: 0.92rem; color: var(--ink); margin-bottom: 4px; letter-spacing: 0.01em; }
-  .path-card-desc { font-size: 0.77rem; color: var(--charcoal-light); line-height: 1.6; font-weight: 300; }
-  .path-card-arrow { color: var(--charcoal-light); font-size: 1rem; flex-shrink: 0; }
-
-  .home-footer-links { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 0 24px; font-size: 0.76rem; }
-  .goals-quiet-link { background: none; border: none; color: var(--charcoal-light); font-size: 0.76rem; font-family: var(--font-sans); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; padding: 0; transition: color 0.15s; }
-  .goals-quiet-link:hover { color: var(--ink); }
-  .home-footer-divider { color: var(--border-solid); }
-  .home-footer-code { color: var(--charcoal-light); letter-spacing: 0.06em; font-weight: 600; font-family: var(--font-sans); font-size: 0.73rem; }
-
-  /* ── BUTTONS ── */
-  .btn-primary { background: var(--ink); color: white; border: none; border-radius: 32px; padding: 11px 22px; font-size: 0.82rem; font-family: var(--font-sans); font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.04em; }
-  .btn-primary:hover { background: var(--depth); transform: translateY(-1px); box-shadow: var(--shadow-md); }
-  .btn-secondary {
-    background: var(--surface);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: var(--ink);
-    border: 1px solid var(--border);
-    border-radius: 32px;
-    padding: 9px 20px;
-    font-size: 0.8rem;
-    font-family: var(--font-sans);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.18s;
-  }
-  .btn-secondary:hover { background: rgba(255,255,255,0.75); box-shadow: var(--shadow-sm); }
-  .btn-rose { background: var(--blush); color: white; border: none; border-radius: 32px; padding: 12px 24px; font-size: 0.86rem; font-family: var(--font-sans); font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; letter-spacing: 0.02em; }
-  .btn-rose:hover { background: #b8896f; transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-  .back-btn { margin-left: auto; font-size: 0.76rem; color: var(--charcoal-light); background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); padding: 6px 14px; border-radius: 20px; cursor: pointer; font-family: var(--font-sans); font-weight: 500; transition: all 0.15s; white-space: nowrap; }
-  .back-btn:hover { background: rgba(255,255,255,0.75); color: var(--ink); }
-  .back-btn-ghost { background: none; border: none; font-size: 0.78rem; color: var(--charcoal-light); cursor: pointer; font-family: var(--font-sans); font-weight: 500; padding: 0; transition: color 0.15s; }
-  .back-btn-ghost:hover { color: var(--ink); }
-
-  /* ── ONBOARDING ── */
-  .onboard-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px 24px; background: var(--cream); background-image: var(--gradient-atm); }
-  .onboard-card { background: var(--surface); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 44px 38px; max-width: 480px; width: 100%; box-shadow: var(--shadow-lg); }
-  .onboard-logo { display: flex; justify-content: center; margin-bottom: 24px; }
-  .onboard-eyebrow { font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--charcoal-light); font-weight: 600; text-align: center; margin-bottom: 10px; }
-  .onboard-heading { font-family: var(--font-serif); font-size: 2.2rem; font-weight: 500; color: var(--ink); line-height: 1.15; text-align: center; margin-bottom: 6px; }
-  .onboard-heading em { font-style: italic; color: var(--blush); }
-  .onboard-sub { font-size: 0.84rem; color: var(--charcoal-light); text-align: center; line-height: 1.75; margin-bottom: 32px; font-weight: 300; }
-  .onboard-divider { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
-  .onboard-step-title { font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); margin-bottom: 4px; }
-  .onboard-step-sub { font-size: 0.8rem; color: var(--charcoal-light); margin-bottom: 20px; line-height: 1.55; font-weight: 300; }
-  .onboard-role-select { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-  .role-btn { padding: 14px 12px; border-radius: var(--radius-lg); border: 1.5px solid var(--border); cursor: pointer; font-family: var(--font-sans); font-size: 0.82rem; font-weight: 500; transition: all 0.15s; background: var(--surface-soft); backdrop-filter: blur(8px); color: var(--charcoal-mid); text-align: center; }
-  .role-btn .role-label { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px; }
-  .role-btn .role-name-preview { font-family: var(--font-serif); font-size: 0.95rem; color: var(--charcoal-light); font-style: italic; }
-  .role-btn.selected-p1 { border-color: var(--rose-border); background: var(--rose-light); }
-  .role-btn.selected-p1 .role-label { color: var(--rose); }
-  .role-btn.selected-p2 { border-color: var(--sage-border); background: var(--sage-light); }
-  .role-btn.selected-p2 .role-label { color: var(--sage); }
-  .onboard-name-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-  .onboard-name-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--charcoal-light); }
-  .onboard-name-input { border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 14px; font-family: var(--font-serif); font-size: 1rem; color: var(--ink); background: var(--surface-solid); backdrop-filter: blur(8px); outline: none; transition: border-color 0.15s; width: 100%; }
-  .onboard-name-input:focus { border-color: var(--blush); }
-  .onboard-note { font-size: 0.74rem; color: var(--charcoal-light); line-height: 1.65; margin-bottom: 20px; font-weight: 300; }
-  .onboard-submit { width: 100%; padding: 14px; border-radius: 32px; border: none; font-family: var(--font-sans); font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.04em; }
-  .onboard-submit.ready { background: var(--ink); color: white; }
-  .onboard-submit.ready:hover { background: var(--depth); transform: translateY(-1px); box-shadow: var(--shadow-md); }
-  .onboard-submit:not(.ready) { background: var(--border); color: var(--charcoal-light); cursor: not-allowed; }
-  .onboard-quote { text-align: center; font-family: var(--font-serif); font-style: italic; font-size: 0.82rem; color: var(--charcoal-light); margin-top: 22px; }
-  .onboard-code-tabs { display: flex; margin-bottom: 20px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface-soft); }
-  .code-tab { flex: 1; padding: 10px; border: none; font-family: var(--font-sans); font-size: 0.78rem; font-weight: 500; cursor: pointer; color: var(--charcoal-light); transition: all 0.15s; background: transparent; }
-  .code-tab.active { background: var(--surface-solid); color: var(--ink); font-weight: 700; }
-  .couple-code-display { font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; text-align: center; padding: 18px; background: var(--surface); border: 1.5px dashed var(--border); border-radius: var(--radius-lg); color: var(--ink); margin: 12px 0; font-family: var(--font-sans); }
-  .code-regen-btn { display: block; margin: 0 auto 16px; background: none; border: none; font-size: 0.76rem; color: var(--charcoal-light); cursor: pointer; font-family: var(--font-sans); text-decoration: underline; }
-  .join-error { color: var(--rose); font-size: 0.8rem; margin: 8px 0; text-align: center; }
-  .back-link { display: block; text-align: center; background: none; border: none; color: var(--charcoal-light); font-size: 0.8rem; cursor: pointer; margin-top: 12px; font-family: var(--font-sans); text-decoration: underline; }
-  .code-create-box, .code-join-box { display: flex; flex-direction: column; }
-  .cc-label { color: var(--charcoal-light); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.72rem; }
-  .cc-code { font-weight: 700; letter-spacing: 0.1em; color: var(--ink); font-family: var(--font-sans); font-size: 0.86rem; }
-  .cc-hint { color: var(--charcoal-light); font-style: italic; font-size: 0.72rem; }
-
-  /* ── SECTIONS — path inner screens ── */
-  .section { margin-bottom: 34px; }
-  .section-title { font-family: var(--font-serif); font-size: 1.2rem; font-weight: 500; color: var(--ink); margin-bottom: 8px; }
-  .section-desc { font-size: 0.83rem; color: var(--charcoal-light); margin-bottom: 18px; line-height: 1.72; font-weight: 300; }
-
-  /* ── PATH HEADER (repair, learn, goals) ── */
-  .path-header { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
-  .path-header-icon { font-size: 1.5rem; }
-  .path-header-title { font-family: var(--font-serif); font-size: 1.65rem; font-weight: 500; color: var(--ink); }
-  .path-header-subtitle { font-size: 0.72rem; color: var(--charcoal-light); margin-top: 3px; letter-spacing: 0.05em; font-weight: 300; }
-
-  /* ── ESCALATION EMERGENCY SCREEN ── */
-  .escalate-screen { max-width: 560px; margin: 0 auto; }
-  .escalate-top-bar { display: flex; align-items: center; justify-content: space-between; padding: 22px 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 40px; }
-  .escalate-eyebrow { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--plum); }
-  .escalate-hero { text-align: center; margin-bottom: 48px; }
-  .escalate-headline { font-family: var(--font-serif); font-size: clamp(2.4rem, 5vw, 3.2rem); font-weight: 500; color: var(--depth); line-height: 1.12; margin-bottom: 12px; }
-  .escalate-sub { font-size: 0.88rem; color: var(--charcoal-light); font-weight: 300; }
-  .escalate-breathe {
-    width: 52px; height: 52px; border-radius: 50%; margin: 20px auto 0;
-    background: radial-gradient(circle, var(--blush-mid) 0%, transparent 70%);
-    animation: breathe 4s ease-in-out infinite;
-  }
-
-  /* ── FORMS ── */
-  .textarea-field { width: 100%; min-height: 80px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-solid); backdrop-filter: blur(8px); font-family: var(--font-sans); font-size: 0.85rem; color: var(--ink); resize: vertical; line-height: 1.65; transition: border-color 0.15s; outline: none; }
-  .textarea-field:focus { border-color: var(--blush); }
-  .textarea-field.p1-field:focus { border-color: var(--rose); }
-  .textarea-field.p2-field:focus { border-color: var(--sage); }
-  .field-label { font-size: 0.74rem; font-weight: 600; color: var(--charcoal-light); margin-bottom: 6px; letter-spacing: 0.03em; font-family: var(--font-sans); }
-  .field-label.p1 { color: var(--rose); }
-  .field-label.p2 { color: var(--sage); }
-  .field-group { margin-bottom: 16px; }
-  .save-indicator { font-size: 0.7rem; color: var(--sage); margin-top: 3px; opacity: 0; transition: opacity 0.3s; }
-  .save-indicator.visible { opacity: 1; }
-
-  /* ── TABS ── */
-  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 26px; overflow-x: auto; scrollbar-width: none; background: transparent; }
-  .tab-bar::-webkit-scrollbar { display: none; }
-  .tab-btn { font-family: var(--font-sans); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.04em; padding: 10px 16px; background: none; border: none; cursor: pointer; color: var(--charcoal-light); white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
-  .tab-btn:hover { color: var(--ink); }
-  .tab-btn.active { color: var(--ink); border-bottom-color: var(--blush); }
-  .tab-check { font-size: 0.65rem; color: var(--sage); margin-left: 3px; }
-
-  /* ── PARTNER SELECTOR ── */
-  .partner-selector { display: flex; align-items: center; gap: 10px; background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; margin-bottom: 20px; flex-wrap: wrap; }
-  .partner-selector-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--charcoal-light); white-space: nowrap; }
-  .partner-sel-btn { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); font-size: 0.8rem; font-family: var(--font-sans); font-weight: 600; cursor: pointer; transition: all 0.15s; background: transparent; color: var(--charcoal-mid); }
-  .partner-sel-btn.p1.active { background: var(--rose-light); color: var(--rose); border-color: var(--rose-border); }
-  .partner-sel-btn.p2.active { background: var(--sage-light); color: var(--sage); border-color: var(--sage-border); }
-  .partner-selector-hint { font-size: 0.7rem; color: var(--charcoal-light); font-style: italic; margin-left: auto; }
-  .private-banner { font-size: 0.74rem; font-weight: 600; padding: 8px 14px; border-radius: var(--radius); margin-bottom: 14px; }
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .partner-col-header { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 7px 12px; border-radius: var(--radius); margin-bottom: 12px; }
-  .partner-col-header.p1 { background: var(--rose-light); color: var(--rose); border: 1px solid var(--rose-border); }
-  .partner-col-header.p2 { background: var(--sage-light); color: var(--sage); border: 1px solid var(--sage-border); }
-
-  /* ── CALLOUTS ── */
-  .callout { border-radius: var(--radius); padding: 13px 16px; font-size: 0.81rem; line-height: 1.65; margin: 12px 0; backdrop-filter: blur(8px); }
-  .callout.sage { background: var(--sage-light); border: 1px solid var(--sage-border); color: var(--charcoal-mid); }
-  .callout.rose { background: var(--rose-light); border: 1px solid var(--rose-border); color: var(--charcoal-mid); }
-  .callout.gold { background: var(--gold-light); border: 1px solid var(--gold-border); color: var(--charcoal-mid); }
-  .callout.purple { background: var(--blush-light); border: 1px solid var(--blush-mid); color: var(--charcoal-mid); }
-
-  /* ── BRIDGE PROMPT ── */
-  .bridge-prompt { border-radius: var(--radius-lg); padding: 20px 24px; margin-top: 36px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; backdrop-filter: blur(8px); }
-  .bridge-prompt.blush { background: var(--blush-light); border: 1px solid var(--blush-mid); }
-  .bridge-prompt.sage { background: var(--sage-light); border: 1px solid var(--sage-border); }
-  .bridge-prompt-text { font-size: 0.83rem; color: var(--charcoal-mid); line-height: 1.6; font-weight: 300; }
-  .bridge-btn { background: var(--blush); color: white; border: none; border-radius: 32px; padding: 10px 20px; font-family: var(--font-sans); font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
-  .bridge-btn:hover { background: #b8896f; transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-
-  /* ── PROTOCOL STEPS ── */
-  .protocol-steps { display: flex; flex-direction: column; gap: 10px; }
-  .protocol-step { border-radius: var(--radius); padding: 14px 18px; display: flex; gap: 12px; align-items: flex-start; background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); }
-  .protocol-step.step-1 { border-left: 3px solid var(--rose); }
-  .protocol-step.step-2 { border-left: 3px solid var(--sage); }
-  .protocol-step.step-3 { border-left: 3px solid var(--plum); }
-  .protocol-step.step-4 { border-left: 3px solid var(--gold); }
-  .protocol-step.step-5 { border-left: 3px solid var(--blush); }
-  .step-num { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.76rem; flex-shrink: 0; background: var(--surface-solid); color: var(--ink); border: 1px solid var(--border); }
-  .step-content { flex: 1; }
-  .step-label { font-weight: 600; font-size: 0.86rem; color: var(--ink); margin-bottom: 3px; }
-  .step-text { font-size: 0.8rem; color: var(--charcoal-mid); line-height: 1.6; font-weight: 300; }
-  .step-phrase { margin-top: 8px; padding: 8px 12px; background: var(--surface-solid); border-radius: 6px; font-family: var(--font-serif); font-style: italic; font-size: 0.86rem; color: var(--ink); border: 1px solid var(--border); }
-
-  /* ── STOP SKILL ── */
-  .stop-card { background: var(--depth); border-radius: var(--radius-lg); padding: 26px; color: white; margin-bottom: 20px; box-shadow: var(--shadow-md); }
-  .stop-title { font-family: var(--font-serif); font-size: 1.35rem; color: white; margin-bottom: 4px; }
-  .stop-sub { font-size: 0.72rem; opacity: 0.55; margin-bottom: 22px; letter-spacing: 0.06em; text-transform: uppercase; }
-  .stop-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-  .stop-step { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius); padding: 14px 10px; text-align: center; }
-  .stop-letter { font-family: var(--font-serif); font-size: 2.2rem; font-weight: 500; margin-bottom: 4px; line-height: 1; }
-  .stop-step:nth-child(1) .stop-letter { color: var(--blush); }
-  .stop-step:nth-child(2) .stop-letter { color: rgba(122,158,142,0.9); }
-  .stop-step:nth-child(3) .stop-letter { color: rgba(184,153,90,0.9); }
-  .stop-step:nth-child(4) .stop-letter { color: rgba(228,225,240,0.9); }
-  .stop-word { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; margin-bottom: 6px; }
-  .stop-desc { font-size: 0.71rem; opacity: 0.6; line-height: 1.45; }
-  .stop-cue { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius); padding: 14px 16px; margin-top: 18px; }
-  .stop-cue-label { font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.45; margin-bottom: 6px; font-weight: 700; }
-  .stop-cue-text { font-family: var(--font-serif); font-style: italic; font-size: 0.9rem; color: white; line-height: 1.65; opacity: 0.9; }
-
-  /* ── ACTIVATION ── */
-  .activation-check { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; margin-bottom: 16px; }
-  .activation-partners { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .activation-name { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
-  .activation-name.p1 { color: var(--rose); }
-  .activation-name.p2 { color: var(--sage); }
-  .activation-value { font-size: 1.5rem; font-weight: 600; color: var(--ink); font-family: var(--font-serif); }
-  .activation-slider { width: 100%; accent-color: var(--blush); margin: 6px 0; cursor: pointer; }
-  .slider-row { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--charcoal-light); }
-  .activation-cue { margin-top: 14px; font-size: 0.8rem; border-radius: var(--radius); padding: 11px 14px; backdrop-filter: blur(8px); }
-  .activation-cue.pause { background: var(--rose-light); color: var(--rose); border: 1px solid var(--rose-border); }
-  .activation-cue.proceed { background: var(--sage-light); color: var(--sage); border: 1px solid var(--sage-border); }
-  .return-time { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; margin: 16px 0; }
-  .return-time-label { font-size: 0.76rem; font-weight: 600; color: var(--charcoal-light); margin-bottom: 12px; letter-spacing: 0.02em; }
-  .return-time-options { display: flex; gap: 8px; flex-wrap: wrap; }
-  .return-btn { padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border); font-size: 0.76rem; font-family: var(--font-sans); font-weight: 500; cursor: pointer; transition: all 0.15s; background: var(--surface-soft); color: var(--ink); }
-  .return-btn.selected { background: var(--depth); color: white; border-color: var(--depth); }
-  .return-time-display { margin-top: 12px; font-family: var(--font-serif); font-style: italic; font-size: 0.9rem; color: var(--ink); }
-
-  /* ── FORMULA ── */
-  .formula-box { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 20px; text-align: center; margin: 14px 0; }
-  .formula-label { font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--charcoal-light); margin-bottom: 6px; font-weight: 600; }
-  .formula-text { font-family: var(--font-serif); font-size: 1.05rem; color: var(--ink); }
-  .formula-text span { color: var(--blush); }
-
-  /* ── AUDIO ── */
-  .audio-player { background: var(--depth); border-radius: var(--radius-lg); padding: 18px 22px; color: white; margin: 16px 0; box-shadow: var(--shadow-sm); }
-  .audio-title { font-family: var(--font-serif); font-size: 0.95rem; font-style: italic; margin-bottom: 3px; }
-  .audio-desc { font-size: 0.72rem; opacity: 0.55; margin-bottom: 14px; font-weight: 300; }
-  .audio-controls { display: flex; align-items: center; gap: 10px; }
-  .audio-btn { width: 38px; height: 38px; border-radius: 50%; background: var(--blush); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; color: white; transition: all 0.2s; flex-shrink: 0; }
-  .audio-btn:hover { background: #b8896f; }
-  .audio-track { flex: 1; height: 2px; background: rgba(255,255,255,0.18); border-radius: 2px; }
-  .audio-track-fill { height: 100%; background: var(--blush); border-radius: 2px; transition: width 0.1s; }
-  .audio-time { font-size: 0.7rem; opacity: 0.5; }
-  .audio-placeholder { font-size: 0.68rem; opacity: 0.4; font-style: italic; margin-top: 8px; }
-
-  /* ── SCRIPTS ── */
-  .scripts-toggle { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; width: 100%; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: var(--font-sans); font-size: 0.84rem; color: var(--ink); font-weight: 500; transition: all 0.15s; }
-  .scripts-toggle:hover { background: rgba(255,255,255,0.72); }
-  .scripts-panel { border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); background: var(--surface); backdrop-filter: blur(8px); overflow: hidden; }
-  .script-item { padding: 14px 18px; border-bottom: 1px solid var(--border); }
-  .script-item:last-child { border-bottom: none; }
-  .script-situation { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--charcoal-light); margin-bottom: 8px; }
-  .script-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 5px; }
-  .script-icon { font-size: 0.82rem; flex-shrink: 0; margin-top: 2px; }
-  .script-text { font-size: 0.82rem; line-height: 1.6; color: var(--charcoal-mid); font-family: var(--font-serif); font-style: italic; }
-  .script-text.avoid { text-decoration: line-through; opacity: 0.4; font-style: normal; font-family: var(--font-sans); font-size: 0.78rem; }
-
-  /* ── REPAIR ── */
-  .repair-step { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
-  .repair-step:last-child { border-bottom: none; }
-  .repair-num { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; background: var(--blush); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.76rem; }
-  .repair-title { font-weight: 600; font-size: 0.86rem; color: var(--ink); margin-bottom: 2px; }
-  .repair-desc { font-size: 0.79rem; color: var(--charcoal-mid); line-height: 1.55; font-weight: 300; }
-
-  /* ── DEAR MAN ── */
-  .dear-man-grid { display: flex; flex-direction: column; gap: 8px; }
-  .dear-step { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; }
-  .dear-letter { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 500; color: var(--gold); flex-shrink: 0; width: 28px; line-height: 1; }
-  .dear-word { font-weight: 600; font-size: 0.84rem; color: var(--ink); margin-bottom: 2px; }
-  .dear-desc { font-size: 0.78rem; color: var(--charcoal-mid); line-height: 1.55; font-weight: 300; }
-  .dear-example { font-family: var(--font-serif); font-style: italic; font-size: 0.82rem; color: var(--charcoal-light); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
-
-  /* ── GOALS ── */
-  .goals-banner { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 24px; text-align: center; }
-  .goals-banner-title { font-family: var(--font-serif); font-size: 1.3rem; color: var(--ink); margin-bottom: 6px; }
-  .goals-banner-sub { font-size: 0.82rem; color: var(--charcoal-light); line-height: 1.65; font-weight: 300; }
-  .goals-sync-note { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; color: var(--sage); font-weight: 600; margin-bottom: 22px; }
-  .goals-sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); animation: pulse 2s infinite; }
-
-  /* ── CONFLICT PROFILE ── */
-  .profile-question { margin-bottom: 20px; }
-  .profile-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .profile-chip { font-size: 0.74rem; padding: 5px 13px; border-radius: 20px; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; font-family: var(--font-sans); user-select: none; background: var(--surface-soft); color: var(--charcoal-mid); }
-  .profile-chip.selected-p1 { background: var(--rose-light); color: var(--rose); border-color: var(--rose-border); }
-  .profile-chip.selected-p2 { background: var(--sage-light); color: var(--sage); border-color: var(--sage-border); }
-  .profile-chip:hover { border-color: var(--charcoal-light); }
-
-  /* ── WINDOW ZONES ── */
-  .window-zones { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 18px; }
-  .zone { padding: 13px 18px; backdrop-filter: blur(8px); }
-  .zone.above { background: var(--rose-light); border-bottom: 1px solid var(--border); }
-  .zone.inside { background: var(--sage-light); border-bottom: 1px solid var(--border); }
-  .zone.below { background: var(--blush-light); }
-  .zone-label { font-weight: 700; font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 3px; }
-  .zone.above .zone-label { color: var(--rose); }
-  .zone.inside .zone-label { color: var(--sage); }
-  .zone.below .zone-label { color: var(--plum); }
-  .zone-desc { font-size: 0.79rem; color: var(--charcoal-mid); line-height: 1.55; font-weight: 300; }
-
-  /* ── WOT RELATIONSHIP PANEL ── */
-  .rel-wot { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 22px; margin-top: 16px; }
-  .rel-wot-title { font-family: var(--font-serif); font-size: 1rem; color: var(--ink); margin-bottom: 4px; }
-  .rel-wot-sub { font-size: 0.78rem; color: var(--charcoal-light); margin-bottom: 16px; line-height: 1.55; font-weight: 300; }
-  .rel-wot-rows { display: flex; flex-direction: column; gap: 8px; }
-  .rel-wot-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .rel-wot-cell { border-radius: var(--radius); padding: 10px 12px; }
-  .rel-wot-cell.rose { background: var(--rose-light); border: 1px solid var(--rose-border); }
-  .rel-wot-cell.sage { background: var(--sage-light); border: 1px solid var(--sage-border); }
-  .rel-wot-cell-label { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 4px; }
-  .rel-wot-cell.rose .rel-wot-cell-label { color: var(--rose); }
-  .rel-wot-cell.sage .rel-wot-cell-label { color: var(--sage); }
-  .rel-wot-cell-text { font-family: var(--font-serif); font-style: italic; font-size: 0.82rem; color: var(--charcoal-mid); line-height: 1.55; }
-  .empty-wot { font-size: 0.78rem; color: var(--charcoal-light); font-style: italic; }
-
-  /* ── CYCLE MAP ── */
-  .cycle-step { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); }
-  .cycle-step + .cycle-step::before { content: "↓"; color: var(--charcoal-light); font-size: 1.1rem; display: block; text-align: center; padding: 3px 0; }
-  .cycle-label { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--charcoal-light); margin-bottom: 3px; }
-  .cycle-input { border: none; border-bottom: 1px solid var(--border); background: transparent; font-family: var(--font-serif); font-style: italic; font-size: 0.93rem; color: var(--ink); padding: 4px 0; width: 100%; outline: none; }
-  .cycle-input:focus { border-bottom-color: var(--blush); }
-  .cycle-loop-note { text-align: center; padding: 8px; font-size: 0.72rem; color: var(--charcoal-light); font-style: italic; }
-
-  /* ── EFT ── */
-  .eft-intro { font-family: var(--font-serif); font-style: italic; font-size: 0.93rem; color: var(--charcoal-mid); line-height: 1.8; margin-bottom: 18px; }
-  .eft-partners { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 6px; }
-  .eft-partner-col { display: flex; flex-direction: column; gap: 8px; }
-  .eft-partner-header { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
-  .eft-partner-header.p1 { color: var(--rose); border-color: var(--rose-border); }
-  .eft-partner-header.p2 { color: var(--sage); border-color: var(--sage-border); }
-  .eft-layer { border-radius: var(--radius); padding: 12px 14px; backdrop-filter: blur(8px); }
-  .eft-layer.behavior { background: var(--rose-light); border: 1px solid var(--rose-border); }
-  .eft-layer.protective { background: var(--blush-light); border: 1px solid var(--blush-mid); }
-  .eft-layer.vulnerable { background: var(--sage-light); border: 1px solid var(--sage-border); }
-  .eft-layer.need { background: var(--gold-light); border: 1px solid var(--gold-border); }
-  .eft-layer-label { font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
-  .eft-layer.behavior .eft-layer-label { color: var(--rose); }
-  .eft-layer.protective .eft-layer-label { color: var(--blush); }
-  .eft-layer.vulnerable .eft-layer-label { color: var(--sage); }
-  .eft-layer.need .eft-layer-label { color: var(--gold); }
-  .eft-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
-  .eft-chip { font-size: 0.7rem; padding: 3px 9px; border-radius: 12px; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; user-select: none; }
-  .eft-chip.behavior-chip { background: var(--rose-light); color: var(--rose); border-color: var(--rose-border); }
-  .eft-chip.behavior-chip.selected { background: var(--rose); color: white; border-color: var(--rose); }
-  .eft-chip.protective-chip { background: var(--blush-light); color: var(--blush); border-color: var(--blush-mid); }
-  .eft-chip.protective-chip.selected { background: var(--blush); color: white; }
-  .eft-chip.vulnerable-chip { background: var(--sage-light); color: var(--sage); border-color: var(--sage-border); }
-  .eft-chip.vulnerable-chip.selected { background: var(--sage); color: white; }
-  .eft-chip.need-chip { background: var(--gold-light); color: var(--gold); border-color: var(--gold-border); }
-  .eft-chip.need-chip.selected { background: var(--gold); color: white; }
-  .eft-write-in { width: 100%; border: none; border-bottom: 1px dashed var(--border); background: transparent; font-family: var(--font-serif); font-style: italic; font-size: 0.8rem; color: var(--ink); padding: 4px 0; outline: none; }
-  .eft-write-in:focus { border-bottom-color: var(--blush); }
-  .eft-shared-core { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 22px; text-align: center; margin: 14px 0; }
-  .eft-core-label { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--charcoal-light); margin-bottom: 6px; }
-  .eft-core-text { font-family: var(--font-serif); font-size: 0.98rem; color: var(--ink); line-height: 1.65; }
-  .eft-core-text em { color: var(--sage); }
-  .eft-bridge { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 22px; margin-top: 14px; }
-  .eft-bridge-title { font-family: var(--font-serif); font-size: 0.95rem; color: var(--ink); margin-bottom: 4px; }
-  .eft-bridge-template { background: var(--blush-light); border: 1px solid var(--blush-mid); border-radius: var(--radius); padding: 14px 18px; font-family: var(--font-serif); font-style: italic; font-size: 0.87rem; color: var(--ink); line-height: 1.9; margin-bottom: 14px; }
-  .eft-bridge-template span { color: var(--sage); text-decoration: underline dotted; }
-  .move-selector { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-  .move-btn { padding: 7px 13px; border-radius: 20px; border: 1px solid var(--border); font-size: 0.76rem; font-family: var(--font-sans); font-weight: 500; cursor: pointer; transition: all 0.15s; background: var(--surface-soft); color: var(--charcoal-mid); }
-  .move-btn.selected-pursue { background: var(--rose-light); color: var(--rose); border-color: var(--rose-border); }
-  .move-btn.selected-withdraw { background: var(--blush-light); color: var(--plum); border-color: var(--blush-mid); }
-  .move-btn.selected-both { background: var(--gold-light); color: var(--gold); border-color: var(--gold-border); }
-  .line-of-consciousness { position: relative; margin: 20px 0; display: flex; align-items: center; gap: 10px; }
-  .loc-line { flex: 1; height: 1px; background: var(--charcoal-light); opacity: 0.25; }
-  .loc-label { font-size: 0.64rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--charcoal-light); white-space: nowrap; padding: 3px 10px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface-solid); }
-
-  /* ── PRACTICE TAB ── */
-  .trigger-input { width: 100%; border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; background: var(--surface-solid); font-family: var(--font-sans); font-size: 0.82rem; color: var(--ink); outline: none; transition: border-color 0.15s; }
-  .trigger-input:focus { border-color: var(--gold); }
-  .add-trigger-btn { background: transparent; border: 1px dashed var(--border); border-radius: var(--radius); padding: 8px 14px; font-size: 0.78rem; color: var(--charcoal-light); cursor: pointer; font-family: var(--font-sans); transition: all 0.15s; }
-  .add-trigger-btn:hover { background: var(--surface); border-color: var(--charcoal-light); }
-
-  /* ── CONFLICT LOG ── */
-  .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-  .log-count { font-size: 0.74rem; color: var(--charcoal-light); }
-  .log-entry { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; margin-bottom: 10px; }
-  .log-entry-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .log-date { font-size: 0.7rem; color: var(--charcoal-light); font-weight: 600; letter-spacing: 0.04em; }
-  .log-protocol-badge { font-size: 0.66rem; font-weight: 700; padding: 3px 8px; border-radius: 10px; letter-spacing: 0.04em; }
-  .log-protocol-badge.yes { background: var(--sage-light); color: var(--sage); border: 1px solid var(--sage-border); }
-  .log-protocol-badge.no { background: var(--rose-light); color: var(--rose); border: 1px solid var(--rose-border); }
-  .log-field { margin-bottom: 8px; }
-  .log-field-label { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--charcoal-light); margin-bottom: 3px; }
-  .log-field-value { font-size: 0.82rem; color: var(--charcoal-mid); line-height: 1.6; font-family: var(--font-serif); font-style: italic; }
-  .new-entry-form { background: var(--surface); backdrop-filter: blur(8px); border: 1.5px dashed var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 14px; }
-  .new-entry-title { font-family: var(--font-serif); font-size: 1rem; color: var(--ink); margin-bottom: 14px; }
-  .protocol-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
-  .toggle-btn { flex: 1; padding: 8px; border-radius: var(--radius); border: 1px solid var(--border); cursor: pointer; font-size: 0.78rem; font-family: var(--font-sans); font-weight: 500; transition: all 0.15s; background: var(--surface-soft); color: var(--charcoal-mid); }
-  .toggle-btn.active-yes { background: var(--sage-light); border-color: var(--sage-border); color: var(--sage); font-weight: 700; }
-  .toggle-btn.active-no { background: var(--rose-light); border-color: var(--rose-border); color: var(--rose); font-weight: 700; }
-  .form-actions { display: flex; gap: 8px; margin-top: 14px; }
-
-  /* ── GLIMMER ── */
-  .glimmer-entry { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 18px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
-  .glimmer-icon { font-size: 1.1rem; flex-shrink: 0; }
-  .glimmer-text { font-family: var(--font-serif); font-style: italic; font-size: 0.88rem; color: var(--charcoal-mid); line-height: 1.6; }
-  .glimmer-date { font-size: 0.66rem; color: var(--charcoal-light); margin-top: 3px; }
-  .glimmer-input-area { display: flex; gap: 8px; margin-top: 10px; }
-  .glimmer-input { flex: 1; padding: 10px 13px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-solid); font-family: var(--font-serif); font-style: italic; font-size: 0.86rem; color: var(--ink); outline: none; transition: border-color 0.15s; }
-  .glimmer-input:focus { border-color: var(--sage); }
-  .glimmer-add-btn { background: var(--sage); color: white; border: none; border-radius: var(--radius); padding: 10px 14px; font-size: 0.78rem; font-weight: 600; font-family: var(--font-sans); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-  .glimmer-add-btn:hover { background: #6A8E7E; }
-
-  /* ── CHECKLIST ── */
-  .checklist-item { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; }
-  .checklist-cb { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--blush); cursor: pointer; flex-shrink: 0; }
-  .checklist-label { font-size: 0.83rem; color: var(--charcoal-mid); line-height: 1.55; cursor: pointer; font-weight: 300; }
-
-  /* ── INSPECTION ── */
-  .inspection-question { margin-bottom: 18px; }
-  .inspection-slider { width: 100%; accent-color: var(--blush); margin: 4px 0; }
-  .slider-value { font-weight: 600; font-size: 1.1rem; color: var(--blush); font-family: var(--font-serif); margin-bottom: 4px; }
-  .daily-reset { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 22px; }
-  .daily-title { font-family: var(--font-serif); font-size: 1rem; margin-bottom: 3px; color: var(--ink); }
-  .daily-sub { font-size: 0.76rem; color: var(--charcoal-light); margin-bottom: 14px; font-weight: 300; }
-  .daily-prompt { background: var(--surface-solid); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; border: 1px solid var(--border); }
-  .daily-prompt-q { font-size: 0.8rem; font-weight: 600; color: var(--ink); margin-bottom: 5px; }
-
-  /* ── AGREEMENT ── */
-  .agreement-intro { font-family: var(--font-serif); font-style: italic; font-size: 0.93rem; color: var(--charcoal-mid); line-height: 1.75; margin-bottom: 22px; }
-  .commitment { padding: 14px 0; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
-  .commitment:last-of-type { border-bottom: none; }
-  .commitment-num { width: 24px; height: 24px; border-radius: 50%; background: var(--ink); color: white; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; }
-  .commitment-title { font-weight: 600; font-size: 0.86rem; color: var(--ink); margin-bottom: 3px; }
-  .commitment-text { font-size: 0.8rem; color: var(--charcoal-mid); line-height: 1.6; font-weight: 300; }
-  .sig-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0; }
-  .sig-field input { width: 100%; border: none; border-bottom: 2px solid var(--ink); padding: 8px 4px; background: transparent; font-family: var(--font-serif); font-size: 1rem; color: var(--ink); outline: none; }
-  .sig-label { font-size: 0.66rem; color: var(--charcoal-light); margin-top: 5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-  .agreement-tagline { text-align: center; font-family: var(--font-serif); font-style: italic; font-size: 1.05rem; color: var(--ink); margin-top: 20px; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); backdrop-filter: blur(8px); }
-  .agreement-saved { text-align: center; margin-top: 14px; }
-  .badge { display: inline-flex; align-items: center; gap: 6px; background: var(--sage-light); color: var(--sage); border: 1px solid var(--sage-border); padding: 7px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; }
-
-  /* ── ANTI-PATTERNS ── */
-  .anti-pattern { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .anti-pattern:last-child { border-bottom: none; }
-  .anti-icon { font-size: 0.95rem; flex-shrink: 0; margin-top: 2px; }
-  .anti-name { font-weight: 600; font-size: 0.83rem; color: var(--ink); }
-  .anti-desc { font-size: 0.78rem; color: var(--charcoal-light); margin-top: 1px; line-height: 1.55; font-weight: 300; }
-
-  /* ── COMPARE ── */
-  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-  .compare-cell { border-radius: var(--radius); padding: 14px; backdrop-filter: blur(8px); }
-  .compare-cell.left { background: var(--rose-light); border: 1px solid var(--rose-border); }
-  .compare-cell.right { background: var(--sage-light); border: 1px solid var(--sage-border); }
-  .compare-title { font-weight: 700; font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 6px; }
-  .compare-cell.left .compare-title { color: var(--rose); }
-  .compare-cell.right .compare-title { color: var(--sage); }
-  .compare-item { font-size: 0.78rem; color: var(--charcoal-mid); line-height: 1.6; padding: 2px 0; font-weight: 300; }
-  .compare-example { font-family: var(--font-serif); font-style: italic; font-size: 0.82rem; color: var(--ink); margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); }
-
-  /* ── COREG GRID ── */
-  .coreg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
-  .coreg-item { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--sage-border); border-radius: var(--radius); padding: 8px 10px; font-size: 0.76rem; color: var(--charcoal-mid); line-height: 1.55; display: flex; align-items: flex-start; gap: 5px; }
-  .coreg-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--sage); flex-shrink: 0; margin-top: 5px; }
-
-  /* ── CARD CHECK / MISC ── */
-  .card-check { color: var(--sage); font-size: 0.85rem; margin-left: 5px; }
-  .empty-state { text-align: center; padding: 28px 18px; border: 1px dashed var(--border); border-radius: var(--radius-lg); color: var(--charcoal-light); background: var(--surface-soft); }
-  .empty-icon { font-size: 1.8rem; margin-bottom: 7px; }
-  .empty-text { font-size: 0.83rem; line-height: 1.6; font-weight: 300; }
-  .my-workbook-banner { display: flex; align-items: center; gap: 8px; background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; font-size: 0.76rem; color: var(--charcoal-mid); margin-bottom: 6px; }
-  .my-workbook-name { font-weight: 700; }
-  .tab-shared { border-left: 1px solid var(--border); margin-left: 4px; padding-left: 14px !important; }
-  .textarea { width: 100%; min-height: 70px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-solid); font-family: var(--font-sans); font-size: 0.84rem; color: var(--ink); resize: vertical; line-height: 1.6; outline: none; transition: border-color 0.15s; }
-  .textarea:focus { border-color: var(--blush); }
-  .partner-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-  .partner-input-group { display: flex; flex-direction: column; gap: 6px; }
-  .partner-input-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-  .partner-input-label.p1 { color: var(--rose); }
-  .partner-input-label.p2 { color: var(--sage); }
-  .partner-input { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-family: var(--font-serif); font-size: 0.95rem; color: var(--ink); background: var(--surface-solid); outline: none; transition: border-color 0.15s; width: 100%; }
-  .partner-input.p1:focus { border-color: var(--rose); }
-  .partner-input.p2:focus { border-color: var(--sage); }
-  .path-nav { display: flex; gap: 8px; margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--border); }
-  .path-nav-btn { flex: 1; padding: 12px; border-radius: var(--radius-lg); border: 1px solid var(--border); cursor: pointer; font-family: var(--font-sans); font-size: 0.78rem; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.15s; background: var(--surface); backdrop-filter: blur(8px); color: var(--ink); }
-  .path-nav-btn:hover { box-shadow: var(--shadow-md); background: rgba(255,255,255,0.72); }
-  .path-nav-btn.repair-nav { justify-content: flex-end; }
-  .couple-code-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 12px 0 24px; padding: 10px 16px; background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.76rem; }
-
-  /* ── RESPONSIVE ── */
-  @media (max-width: 600px) {
-    .compare-grid, .two-col, .eft-partners, .stop-steps { grid-template-columns: 1fr; }
-    .sig-row { grid-template-columns: 1fr; }
-    .nav-progress { display: none; }
-    .main { padding: 20px 16px 48px; }
-    .partner-inputs { grid-template-columns: 1fr; }
-    .coreg-grid { grid-template-columns: 1fr; }
-    .rel-wot-row { grid-template-columns: 1fr; }
-    .activation-partners { grid-template-columns: 1fr; }
-    .stop-steps { grid-template-columns: 1fr 1fr; }
-  }
-  /* ── HOME HERO ── */
-  .home-hero { text-align: center; padding: 72px 0 48px; }
-  .home-hero-eyebrow { font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--charcoal-light); font-weight: 700; margin-bottom: 18px; }
-  .home-hero-heading { font-family: var(--font-serif); font-size: clamp(2.8rem, 7vw, 4rem); font-weight: 500; color: var(--ink); line-height: 1.12; margin-bottom: 22px; }
-  .home-hero-heading em { font-style: italic; color: var(--blush); }
-  .home-hero-sub { font-size: 1rem; color: var(--charcoal-light); margin-bottom: 48px; line-height: 1.75; max-width: 440px; margin-left: auto; margin-right: auto; font-weight: 300; }
-  .btn-start-here {
-    display: inline-block;
-    background: var(--ink);
-    color: white;
-    border: none;
-    border-radius: 40px;
-    padding: 18px 52px;
-    font-family: var(--font-sans);
-    font-size: 0.96rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    cursor: pointer;
-    transition: all 0.22s ease;
-    box-shadow: var(--shadow-md);
-    margin-bottom: 18px;
-  }
-  .btn-start-here:hover { background: var(--depth); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
-  .btn-continue-quiet { display: block; background: none; border: none; color: var(--charcoal-light); font-size: 0.82rem; font-family: var(--font-sans); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; margin: 0 auto 44px; transition: color 0.15s; }
-  .btn-continue-quiet:hover { color: var(--ink); }
-
-  /* ── GATE SCREEN ── */
-  .gate-screen { padding: 52px 0 32px; }
-  .gate-eyebrow { font-family: var(--font-serif); font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 500; color: var(--ink); text-align: center; margin-bottom: 40px; }
-
-  /* ── STRENGTHEN ── */
-  .strengthen-locked { text-align: center; padding: 64px 24px; }
-  .strengthen-lock-icon { font-size: 2.4rem; margin-bottom: 16px; opacity: 0.4; }
-  .strengthen-lock-title { font-family: var(--font-serif); font-size: 1.5rem; color: var(--ink); margin-bottom: 10px; }
-  .strengthen-lock-sub { font-size: 0.86rem; color: var(--charcoal-light); line-height: 1.75; max-width: 380px; margin: 0 auto 32px; font-weight: 300; }
-  .strengthen-paths { display: flex; flex-direction: column; gap: 10px; max-width: 400px; margin: 0 auto; }
-  .strengthen-path-btn { background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; cursor: pointer; text-align: left; font-family: var(--font-sans); transition: all 0.18s; }
-  .strengthen-path-btn:hover { box-shadow: var(--shadow-md); background: rgba(255,255,255,0.72); }
-  .strengthen-path-btn-title { font-weight: 600; font-size: 0.88rem; color: var(--ink); margin-bottom: 2px; }
-  .strengthen-path-btn-sub { font-size: 0.75rem; color: var(--charcoal-light); font-weight: 300; }
-
-  /* ── NAV TABS ── */
-  .nav-tabs { display: flex; gap: 2px; }
-  .nav-tab-btn { background: none; border: none; font-family: var(--font-sans); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.04em; color: var(--charcoal-light); cursor: pointer; padding: 6px 12px; border-radius: 20px; transition: all 0.15s; white-space: nowrap; }
-  .nav-tab-btn:hover { color: var(--ink); background: var(--surface); }
-  .nav-tab-btn.active { color: var(--ink); background: var(--surface); }
-  .nav-tab-btn.locked { color: var(--border-solid); cursor: not-allowed; opacity: 0.5; }
-
-  /* ── REPAIR MODE — warm tonal overlay ── */
-  .app.mode-repair { background: #F7F2EC; }
-  .app.mode-repair .nav { background: rgba(247,242,236,0.92); }
-
-  /* ── LEARN MODE — calm cool tonal overlay ── */
-  .app.mode-learn { background: #F2F2F6; }
-  .app.mode-learn .nav { background: rgba(242,242,246,0.92); }
-
-  /* ── LEARN PROGRESS BAR ── */
-  .learn-progress { display: flex; gap: 6px; margin-bottom: 28px; align-items: center; }
-  .learn-progress-step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.3s; }
-  .learn-progress-step.done { background: var(--blush); }
-  .learn-progress-step.active { background: var(--ink); }
-  .learn-progress-label { font-size: 0.7rem; color: var(--charcoal-light); font-weight: 600; white-space: nowrap; }
-
+const FONTS = `
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&display=swap');
 `;
 
-// ─── HELPERS ───────────────────────────────────────────────────────────────────
-function formatDate(iso) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-function today() { return new Date().toISOString(); }
+const css = `
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-function partnerName(data, p) {
-  if (p === "p1") return data.name_p1 || "Partner 1";
-  return data.name_p2 || "Partner 2";
-}
+  :root {
+    --cream: #F4F1EC;
+    --ink: #1C1C1C;
+    --depth: #2C3540;
+    --lavender: #E4E1F0;
+    --steel: #C9D1DC;
+    --blush: #C49A8A;
+    --plum: #484659;
+    --sage: #7A9E8E;
+    --gold: #B8995A;
+    --mist: #E8EBF0;
+    --warm-gray: #8A8478;
+    --serif: 'EB Garamond', Georgia, serif;
+    --sans: 'Jost', system-ui, sans-serif;
+  }
 
-// ─── LOGO ──────────────────────────────────────────────────────────────────────
-function Logo() {
+  html, body, #root {
+    height: 100%;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--cream);
+    position: relative;
+  }
+
+  /* ── SCREENS ── */
+  .screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    padding: 48px 28px 120px;
+    animation: fadeUp 0.4s ease both;
+  }
+  .screen.centered {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── TYPOGRAPHY ── */
+  .eyebrow {
+    font-family: var(--sans);
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: 2.2rem;
+    font-weight: 400;
+    line-height: 1.2;
+    color: var(--ink);
+    margin-bottom: 16px;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.6rem;
+    font-weight: 400;
+    line-height: 1.25;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-size: 1.15rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+  p {
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: #4A4540;
+    margin-bottom: 12px;
+  }
+  .lead {
+    font-size: 1rem;
+    line-height: 1.65;
+    color: #3A3530;
+  }
+
+  /* ── LOGO MARK ── */
+  .logomark {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 24px;
+  }
+  .logomark-lg {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 32px;
+  }
+
+  /* ── INPUTS ── */
+  .field {
+    margin-bottom: 20px;
+  }
+  .field label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+    margin-bottom: 8px;
+  }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    background: white;
+    border: 1px solid var(--steel);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    font-weight: 300;
+    color: var(--ink);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+    appearance: none;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    border-color: var(--plum);
+    box-shadow: 0 0 0 3px rgba(72,70,89,0.08);
+  }
+  .field textarea {
+    resize: vertical;
+    min-height: 100px;
+    line-height: 1.6;
+  }
+  .field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238A8478' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 40px;
+    cursor: pointer;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--depth);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(28,28,28,0.18);
+  }
+  .btn-secondary {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--steel);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--plum);
+    color: var(--plum);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--warm-gray);
+    font-weight: 400;
+    font-size: 0.82rem;
+    padding: 12px 24px;
+  }
+  .btn-ghost:hover {
+    color: var(--ink);
+  }
+  .btn-plum {
+    background: var(--plum);
+    color: white;
+  }
+  .btn-plum:hover:not(:disabled) {
+    background: #3a3848;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(72,70,89,0.25);
+  }
+  .btn-sage {
+    background: var(--sage);
+    color: white;
+  }
+  .btn-danger {
+    background: #C0392B;
+    color: white;
+  }
+  .btn + .btn { margin-top: 10px; }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+  }
+  .btn-row .btn { flex: 1; }
+
+  /* ── CARDS ── */
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(201,209,220,0.5);
+  }
+  .card-lavender {
+    background: var(--lavender);
+    border-color: rgba(72,70,89,0.1);
+  }
+  .card-blush {
+    background: rgba(196,154,138,0.12);
+    border-color: rgba(196,154,138,0.25);
+  }
+  .card-sage {
+    background: rgba(122,158,142,0.1);
+    border-color: rgba(122,158,142,0.2);
+  }
+
+  /* ── DIVIDER ── */
+  .divider {
+    height: 1px;
+    background: var(--steel);
+    opacity: 0.4;
+    margin: 24px 0;
+  }
+
+  /* ── PILL TAGS ── */
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .pill {
+    background: var(--mist);
+    border: 1px solid var(--steel);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    color: var(--depth);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--sans);
+  }
+  .pill.active {
+    background: var(--plum);
+    border-color: var(--plum);
+    color: white;
+  }
+
+  /* ── SLIDER ── */
+  .slider-wrap {
+    margin: 16px 0;
+  }
+  .slider-wrap input[type=range] {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(to right, var(--sage) 0%, var(--blush) 60%, #C0392B 100%);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .slider-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--plum);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    cursor: pointer;
+  }
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--warm-gray);
+    margin-top: 6px;
+  }
+  .slider-value {
+    text-align: center;
+    font-family: var(--serif);
+    font-size: 2.4rem;
+    color: var(--plum);
+    margin: 8px 0;
+  }
+
+  /* ── PROGRESS BAR ── */
+  .progress-bar {
+    height: 2px;
+    background: var(--steel);
+    border-radius: 2px;
+    margin-bottom: 40px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--plum);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+
+  /* ── NAV ── */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 480px;
+    background: rgba(244,241,236,0.95);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(201,209,220,0.5);
+    display: flex;
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    z-index: 100;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    transition: all 0.2s;
+  }
+  .nav-icon {
+    font-size: 1.3rem;
+    line-height: 1;
+  }
+  .nav-label {
+    font-family: var(--sans);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+    transition: color 0.2s;
+  }
+  .nav-item.active .nav-label {
+    color: var(--plum);
+  }
+  .nav-item.active .nav-icon {
+    transform: scale(1.1);
+  }
+
+  /* ── TOP BAR ── */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(244,241,236,0.95);
+    backdrop-filter: blur(8px);
+  }
+  .back-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: var(--warm-gray);
+    padding: 4px;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--sans);
+    font-size: 0.82rem;
+  }
+  .back-btn:hover { color: var(--ink); }
+
+  /* ── BREATHING ANIMATION ── */
+  .breathing-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 32px;
+  }
+  .breathing-circle {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    border: 2px solid rgba(72,70,89,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .breathing-circle::before {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(72,70,89,0.15) 0%, transparent 70%);
+    transition: all ease;
+  }
+  .breathing-circle.inhale::before {
+    width: 160px;
+    height: 160px;
+    animation: expand 4s ease-in-out forwards;
+  }
+  .breathing-circle.hold::before {
+    width: 160px;
+    height: 160px;
+  }
+  .breathing-circle.exhale::before {
+    animation: contract 4s ease-in-out forwards;
+    width: 40px;
+    height: 40px;
+  }
+  @keyframes expand {
+    from { width: 40px; height: 40px; opacity: 0.4; }
+    to { width: 160px; height: 160px; opacity: 1; }
+  }
+  @keyframes contract {
+    from { width: 160px; height: 160px; opacity: 1; }
+    to { width: 40px; height: 40px; opacity: 0.4; }
+  }
+  .breathing-instruction {
+    font-family: var(--serif);
+    font-size: 1.8rem;
+    color: var(--plum);
+    text-align: center;
+    font-style: italic;
+  }
+  .breathing-count {
+    font-family: var(--serif);
+    font-size: 3.5rem;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .breathing-phase {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+  }
+
+  /* ── GROUNDING ANIMATION ── */
+  .grounding-sense {
+    font-family: var(--serif);
+    font-size: 1.4rem;
+    font-style: italic;
+    color: var(--plum);
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .grounding-count-display {
+    font-size: 4rem;
+    font-family: var(--serif);
+    color: var(--ink);
+    text-align: center;
+  }
+  .grounding-prompt {
+    font-size: 0.9rem;
+    color: var(--warm-gray);
+    text-align: center;
+    line-height: 1.6;
+    padding: 0 20px;
+  }
+
+  /* ── REPLACEMENT BEHAVIOR CARD ── */
+  .replacement-card {
+    background: linear-gradient(135deg, var(--lavender) 0%, rgba(228,225,240,0.5) 100%);
+    border: 1px solid rgba(72,70,89,0.15);
+    border-radius: 20px;
+    padding: 28px;
+    text-align: center;
+    animation: fadeUp 0.6s ease both;
+  }
+  .replacement-card .instead-of {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+    margin-bottom: 8px;
+  }
+  .replacement-card .old-behavior {
+    font-family: var(--serif);
+    font-size: 1rem;
+    font-style: italic;
+    color: var(--plum);
+    text-decoration: line-through;
+    opacity: 0.7;
+    margin-bottom: 16px;
+  }
+  .replacement-card .i-will {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sage);
+    margin-bottom: 8px;
+  }
+  .replacement-card .new-behavior {
+    font-family: var(--serif);
+    font-size: 1.25rem;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+
+  /* ── DASHBOARD ── */
+  .dashboard-greeting {
+    margin-bottom: 28px;
+  }
+  .dashboard-greeting .time {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+    margin-bottom: 4px;
+  }
+  .partner-sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(122,158,142,0.12);
+    border: 1px solid rgba(122,158,142,0.25);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    color: var(--sage);
+    margin-bottom: 20px;
+  }
+  .partner-sync-badge.pending {
+    background: rgba(184,153,90,0.1);
+    border-color: rgba(184,153,90,0.25);
+    color: var(--gold);
+  }
+  .sync-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .tools-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .tool-btn {
+    background: white;
+    border: 1px solid rgba(201,209,220,0.6);
+    border-radius: 16px;
+    padding: 20px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .tool-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    border-color: var(--plum);
+  }
+  .tool-btn.regulate { border-top: 3px solid var(--sage); }
+  .tool-btn.repair { border-top: 3px solid var(--blush); }
+  .tool-btn.reflect { border-top: 3px solid var(--plum); }
+  .tool-btn .tool-icon { font-size: 1.6rem; }
+  .tool-btn .tool-name {
+    font-family: var(--serif);
+    font-size: 1rem;
+    color: var(--ink);
+  }
+  .tool-btn .tool-desc {
+    font-size: 0.72rem;
+    color: var(--warm-gray);
+    line-height: 1.4;
+  }
+  .tool-btn-full {
+    grid-column: 1 / -1;
+  }
+
+  .section-label {
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--warm-gray);
+    margin-bottom: 12px;
+  }
+
+  .activation-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .activation-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--steel);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .activation-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+  .activation-num {
+    font-family: var(--serif);
+    font-size: 1.1rem;
+    color: var(--plum);
+    min-width: 28px;
+    text-align: right;
+  }
+
+  /* ── SETUP STEPS ── */
+  .setup-step-indicator {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 32px;
+  }
+  .step-dot {
+    height: 3px;
+    flex: 1;
+    background: var(--steel);
+    border-radius: 2px;
+    transition: background 0.3s;
+  }
+  .step-dot.done { background: var(--plum); }
+  .step-dot.active { background: var(--plum); opacity: 0.5; }
+
+  /* ── INSIGHT BOX ── */
+  .insight {
+    background: var(--lavender);
+    border-left: 3px solid var(--plum);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 16px;
+    margin: 16px 0;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.95rem;
+    color: var(--plum);
+    line-height: 1.6;
+  }
+
+  /* ── GLIMMER ── */
+  .glimmer-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(201,209,220,0.3);
+  }
+  .glimmer-item:last-child { border-bottom: none; }
+  .glimmer-star { font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
+  .glimmer-text { font-size: 0.88rem; line-height: 1.5; color: #3A3530; }
+  .glimmer-date { font-size: 0.7rem; color: var(--warm-gray); margin-top: 3px; }
+
+  /* ── REPAIR SCRIPTS ── */
+  .script-card {
+    background: white;
+    border: 1px solid var(--steel);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .script-card:hover {
+    border-color: var(--blush);
+    background: rgba(196,154,138,0.04);
+  }
+  .script-card.selected {
+    border-color: var(--blush);
+    background: rgba(196,154,138,0.08);
+  }
+  .script-text {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+  .script-context {
+    font-size: 0.72rem;
+    color: var(--warm-gray);
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── ERROR / SUCCESS ── */
+  .msg-error {
+    background: rgba(192,57,43,0.08);
+    border: 1px solid rgba(192,57,43,0.2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.82rem;
+    color: #C0392B;
+    margin-bottom: 16px;
+  }
+  .msg-success {
+    background: rgba(122,158,142,0.1);
+    border: 1px solid rgba(122,158,142,0.25);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.82rem;
+    color: var(--sage);
+    margin-bottom: 16px;
+  }
+
+  /* ── LOADING ── */
+  .loading-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    gap: 16px;
+  }
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--steel);
+    border-top-color: var(--plum);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .spacer { flex: 1; }
+`;
+
+// ─── LOGO SVG ──────────────────────────────────────────────────────────────────
+function Logo({ size = 48 }) {
   return (
-    <svg className="nav-logo" viewBox="0 0 32 32" fill="none">
-      <rect width="32" height="32" rx="8" fill="var(--depth)"/>
-      <path d="M8 22 L16 10 L24 22" stroke="#C4826A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M11 18 L21 18" stroke="#7A9E8E" strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M13 14 L19 14" stroke="#B8995A" strokeWidth="1.5" strokeLinecap="round"/>
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <circle cx="24" cy="24" r="22" stroke="#484659" strokeWidth="1.5" opacity="0.3"/>
+      <circle cx="24" cy="24" r="15" stroke="#484659" strokeWidth="1.5" opacity="0.5"/>
+      <circle cx="24" cy="24" r="8" stroke="#484659" strokeWidth="1.5" opacity="0.8"/>
+      <circle cx="24" cy="24" r="2.5" fill="#484659"/>
     </svg>
   );
 }
 
-// ─── AUDIO PLAYER ──────────────────────────────────────────────────────────────
-function AudioPlayer({ title, desc, duration }) {
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  useEffect(() => {
-    let iv;
-    if (playing) {
-      iv = setInterval(() => {
-        setProgress(p => { if (p >= 100) { setPlaying(false); return 0; } return p + (100 / (duration * 10)); });
-      }, 100);
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function getTimeGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function formatDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function activationColor(level) {
+  if (level <= 4) return "#7A9E8E";
+  if (level <= 7) return "#B8995A";
+  return "#C0392B";
+}
+
+function activationLabel(level) {
+  if (level <= 3) return "Regulated";
+  if (level <= 5) return "Activated";
+  if (level <= 7) return "Escalating";
+  return "Flooded";
+}
+
+const DEFAULT_BEHAVIORS = [
+  "I go quiet and withdraw",
+  "I escalate and pursue",
+  "I get defensive and explain",
+  "I shut down completely",
+  "I deflect with humor",
+  "I leave the room",
+  "I become sarcastic",
+  "I bring up past issues",
+  "I say things I don't mean",
+  "I give the silent treatment",
+];
+
+const TRIGGER_OPTIONS = [
+  "Feeling unheard",
+  "Feeling dismissed",
+  "Feeling criticized",
+  "Feeling controlled",
+  "Feeling abandoned",
+  "Feeling disrespected",
+  "Feeling overwhelmed",
+  "Feeling blamed",
+  "Feeling invisible",
+  "Tone of voice",
+  "Being interrupted",
+  "Feeling like a burden",
+];
+
+const BODY_RESPONSES = [
+  "My chest tightens",
+  "My heart races",
+  "I feel heat in my face",
+  "I go numb",
+  "My stomach drops",
+  "I feel frozen",
+  "My throat tightens",
+  "I start shaking",
+  "I feel a wave of nausea",
+  "I dissociate or zone out",
+];
+
+const REPAIR_SCRIPTS = {
+  opening: [
+    { text: "I know that didn't go well. I want to try again — when you're ready.", context: "To open repair" },
+    { text: "I care more about us than about being right. Can we talk?", context: "To de-escalate" },
+    { text: "I got activated back there. That wasn't the real conversation.", context: "To name what happened" },
+    { text: "I'm not okay with how that went. And I don't want to leave it there.", context: "To reconnect" },
+  ],
+  accountability: [
+    { text: "I said some things that weren't fair. I'm sorry for that.", context: "Accountability" },
+    { text: "I went after you when I was scared. That wasn't right.", context: "Accountability" },
+    { text: "I shut down when you needed me to stay. I see that now.", context: "Accountability" },
+  ],
+  softening: [
+    { text: "What I was really trying to say underneath all of that was... I miss feeling close to you.", context: "Underneath the fight" },
+    { text: "When I got angry, what I was actually feeling was scared.", context: "The softer emotion" },
+    { text: "I need you to know that you matter to me — more than winning this.", context: "Reassurance" },
+  ],
+  request: [
+    { text: "Can we slow down and start over? I want to actually hear you.", context: "Making a request" },
+    { text: "Will you tell me what you needed from me in that moment?", context: "Curiosity" },
+    { text: "I want to understand your side. Will you help me?", context: "Repair through curiosity" },
+  ],
+};
+
+// ─── SCREENS ──────────────────────────────────────────────────────────────────
+
+// Gate: Enter confirmation code + email
+function GateScreen({ onSuccess }) {
+  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+
+  const VALID_CODE_PATTERN = /^[A-Za-z0-9]{6,12}$/;
+
+  async function handleSubmit() {
+    setError("");
+    if (!VALID_CODE_PATTERN.test(code.trim())) {
+      setError("Please enter a valid confirmation code (6–12 characters).");
+      return;
     }
-    return () => clearInterval(iv);
-  }, [playing, duration]);
-  return (
-    <div className="audio-player">
-      <div className="audio-title">{title}</div>
-      <div className="audio-desc">{desc}</div>
-      <div className="audio-controls">
-        <button className="audio-btn" onClick={() => setPlaying(!playing)}>{playing ? "⏸" : "▶"}</button>
-        <div className="audio-track"><div className="audio-track-fill" style={{ width: `${progress}%` }} /></div>
-        <span className="audio-time">{Math.floor(duration / 60)}:{String(duration % 60).padStart(2, "0")}</span>
-      </div>
-      <div className="audio-placeholder">🎧 Audio coming soon — placeholder for therapist-voiced recording</div>
-    </div>
-  );
-}
-
-// ─── AUTO-SAVE TEXTAREA ────────────────────────────────────────────────────────
-function AutoSave({ label, fieldKey, data, onSave, minHeight = 80, placeholder = "", partner }) {
-  const [val, setVal] = useState(data[fieldKey] || "");
-  const [saved, setSaved] = useState(false);
-  const handleBlur = () => { onSave({ [fieldKey]: val }); setSaved(true); setTimeout(() => setSaved(false), 2000); };
-  const cls = partner === "p1" ? "p1-field" : partner === "p2" ? "p2-field" : "";
-  const labelCls = partner === "p1" ? "p1" : partner === "p2" ? "p2" : "";
-  return (
-    <div className="field-group">
-      {label && <div className={`field-label ${labelCls}`}>{label}</div>}
-      <textarea className={`textarea-field ${cls}`} style={{ minHeight }} value={val}
-        onChange={e => { setVal(e.target.value); setSaved(false); }}
-        onBlur={handleBlur} placeholder={placeholder} />
-      <div className={`save-indicator ${saved ? "visible" : ""}`}>✓ Saved</div>
-    </div>
-  );
-}
-
-// ─── SCRIPTS ACCORDION ─────────────────────────────────────────────────────────
-function ScriptsAccordion() {
-  const [open, setOpen] = useState(false);
-  const scripts = [
-    { situation: "When you notice escalation", avoid: ["Here we go again.", "You never listen.", "You're impossible."], try: ["I can feel myself getting activated.", "I don't want this to escalate.", "Can we slow this down for a minute?"] },
-    { situation: "When you need a pause", avoid: ["I'm done.", "Forget it.", "Walking away without explanation."], try: ["I'm at about a 7 right now.", "I need time to regulate so I don't say something hurtful.", "I'm coming back. I just need a reset."] },
-    { situation: "When you're triggered (past activated)", avoid: ["You're doing it again.", "You always make me feel this way."], try: ["This is touching something old for me.", "I know this isn't just about now.", "I'm feeling more than this situation alone."] },
-    { situation: "When you want repair", avoid: ["Silence.", "Waiting for the other person to fix it."], try: ["I don't like how that went.", "Can we reset?", "I'm sorry for my tone.", "I want us to feel connected again."] },
-  ];
-  return (
-    <div>
-      <button className="scripts-toggle" onClick={() => setOpen(!open)}>
-        <span>💬 Scripts: What to Say When Activated</span>
-        <span>{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <div className="scripts-panel">
-          {scripts.map((s, i) => (
-            <div key={i} className="script-item">
-              <div className="script-situation">{s.situation}</div>
-              {s.avoid.map((t, j) => <div key={j} className="script-row"><span className="script-icon">✗</span><span className="script-text avoid">{t}</span></div>)}
-              {s.try.map((t, j) => <div key={j} className="script-row"><span className="script-icon">✓</span><span className="script-text">{t}</span></div>)}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// GOALS PATH — shared, synced between both partners
-// ════════════════════════════════════════════════════════════════════════════════
-function SharedAutoSave({ label, fieldKey, sharedData, onSaveShared, placeholder, minHeight }) {
-  const [val, setVal] = useState(sharedData[fieldKey] || "");
-  useEffect(() => { setVal(sharedData[fieldKey] || ""); }, [sharedData[fieldKey]]);
-  const handleBlur = () => { if (val !== (sharedData[fieldKey] || "")) onSaveShared({ [fieldKey]: val }); };
-  return (
-    <div className="field-group">
-      {label && <div className="field-label">{label}</div>}
-      <textarea className="textarea" style={{ minHeight: minHeight || 70 }}
-        value={val} onChange={e => setVal(e.target.value)} onBlur={handleBlur} placeholder={placeholder} />
-    </div>
-  );
-}
-
-function GoalsPath({ sharedData, onSaveShared, identity, onNavigate }) {
-  const p1 = sharedData.name_p1 || "Partner 1";
-  const p2 = sharedData.name_p2 || "Partner 2";
-  const myName = identity.myName;
-  const pName = identity.partnerName;
-
-  return (
-    <div className="fade-in">
-      <div className="path-header">
-        <span className="path-header-icon">🎯</span>
-        <div>
-          <div className="path-header-title">Our Goals</div>
-          <div className="path-header-subtitle">Set together — shared between both workbooks</div>
-        </div>
-        <button className="back-btn" onClick={() => onNavigate("home")}>← Home</button>
-      </div>
-
-      <div className="goals-banner">
-        <div className="goals-banner-title">Before the work begins, name what you're working toward.</div>
-        <div className="goals-banner-sub">This is your shared intention — the reason you're doing this. It lives at the top of both workbooks and reminds you why on hard days.</div>
-      </div>
-
-      <div className="goals-sync-note">
-        <div className="goals-sync-dot" />
-        Shared — both {myName} and {pName} see and can edit this
-      </div>
-
-      <div className="section">
-        <div className="section-title">What do we want to change?</div>
-        <div className="section-desc">Be specific. Not "communicate better" — but what actually keeps happening that you want to stop. Name the pattern, not the person.</div>
-        <SharedAutoSave fieldKey="goals_change" sharedData={sharedData} onSaveShared={onSaveShared}
-          placeholder={"e.g. We want to stop the shutdown-and-silence cycle after disagreements. We want to stop bringing up old fights in new arguments..."}
-          minHeight={90} />
-      </div>
-
-      <div className="section">
-        <div className="section-title">What does success look like in 3–6 months?</div>
-        <div className="section-desc">If this workbook does what it's designed to do, what will be different? Describe it concretely — what will you feel, what will you do differently, what will be possible that isn't now?</div>
-        <SharedAutoSave fieldKey="goals_success" sharedData={sharedData} onSaveShared={onSaveShared}
-          placeholder={"e.g. We can have a disagreement and return to each other within an hour. We feel safe enough to say what we actually need. Arguments don't carry over into the next day..."}
-          minHeight={90} />
-      </div>
-
-      <div className="section">
-        <div className="section-title">What has gotten in the way before?</div>
-        <div className="section-desc">Naming your obstacles isn't pessimism — it's preparation. What patterns, beliefs, or circumstances have blocked progress in the past?</div>
-        <SharedAutoSave fieldKey="goals_obstacles" sharedData={sharedData} onSaveShared={onSaveShared}
-          placeholder={"e.g. One of us shuts down when things get intense. We've started things like this before and stopped. We struggle to find time to actually do the work..."}
-          minHeight={90} />
-      </div>
-
-      <div className="section">
-        <div className="section-title">What are we each willing to commit to?</div>
-        <div className="section-desc">Each partner adds their own. What specific behavior or practice are you genuinely willing to show up for — even on hard days?</div>
-        <div className="card" style={{ marginBottom: 10 }}>
-          <div className="field-label" style={{ color: "var(--rose)", marginBottom: 6 }}>{p1} commits to:</div>
-          <SharedAutoSave fieldKey="goals_commit_p1" sharedData={sharedData} onSaveShared={onSaveShared}
-            placeholder={`${p1}'s specific commitment...`} minHeight={60} />
-        </div>
-        <div className="card">
-          <div className="field-label" style={{ color: "var(--sage)", marginBottom: 6 }}>{p2} commits to:</div>
-          <SharedAutoSave fieldKey="goals_commit_p2" sharedData={sharedData} onSaveShared={onSaveShared}
-            placeholder={`${p2}'s specific commitment...`} minHeight={60} />
-        </div>
-      </div>
-
-      <div className="callout gold">These goals are yours — come back to them when the work feels hard, or when you need a reminder of why you started.</div>
-
-      <button className="btn-rose" style={{ marginTop: 20 }} onClick={() => onNavigate("home")}>
-        ← Back to Workbook
-      </button>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// PATH A: ESCALATING
-// ════════════════════════════════════════════════════════════════════════════════
-function EscalatePath({ data, onSave, onNavigate }) {
-  const [activation1, setActivation1] = useState(data.act1 || 5);
-  const [activation2, setActivation2] = useState(data.act2 || 5);
-  const [returnTime, setReturnTime] = useState(data.returnTime || "");
-  const p1 = partnerName(data, "p1");
-  const p2 = partnerName(data, "p2");
-  const maxActivation = Math.max(activation1, activation2);
-  const shouldPause = maxActivation > 6;
-
-  const saveActivation = (a1, a2) => onSave({ act1: a1, act2: a2 });
-
-  return (
-    <div className="fade-in escalate-screen">
-      <div className="escalate-top-bar">
-        <button className="back-btn-ghost" onClick={() => onNavigate("home")}>← Exit</button>
-        <div className="escalate-eyebrow">Escalation Protocol</div>
-      </div>
-
-      <div className="escalate-hero">
-        <h2 className="escalate-headline">Let's slow this down.</h2>
-        <p className="escalate-sub">One step at a time. Stay with this screen.</p>
-        <div className="escalate-breathe" />
-      </div>
-
-      {/* STOP SKILL */}
-      <div className="section">
-        <div className="section-title">STOP — Before Anything Else</div>
-        <div className="section-desc">Your body has already taken over. Before you can name it to your partner, you need to interrupt yourself. This is internal — do it alone, right now.</div>
-        <div className="stop-card">
-          <div className="stop-title">The STOP Skill</div>
-          <div className="stop-sub">Internal • Body-first • Do this before Step 1</div>
-          <div className="stop-steps">
-            {[
-              { letter: "S", word: "Stop", desc: "Freeze. Don't act on the urge. Don't speak, text, or do anything yet." },
-              { letter: "T", word: "Take a Breath", desc: "One slow breath. In through the nose, out through the mouth. Just one." },
-              { letter: "O", word: "Observe", desc: "Notice what's happening inside. Body? Thoughts? Feelings? No judgment — just witness." },
-              { letter: "P", word: "Proceed Mindfully", desc: "Now choose your next move consciously. What do you actually want to happen here?" },
-            ].map((s, i) => (
-              <div key={i} className="stop-step">
-                <div className="stop-letter">{s.letter}</div>
-                <div className="stop-word">{s.word}</div>
-                <div className="stop-desc">{s.desc}</div>
-              </div>
-            ))}
-          </div>
-          <div className="stop-cue">
-            <div className="stop-cue-label">Internal Cue</div>
-            <div className="stop-cue-text">"My body is activated right now. I'm going to stop and breathe before I do or say anything else."</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Activation Check */}
-      <div className="section">
-        <div className="section-title">Step 1 — Check Your Activation</div>
-        <div className="section-desc">Each partner rates their own activation. Be honest — not what you think you should feel, but what your body is actually doing.</div>
-        <div className="activation-check">
-          <div className="activation-partners">
-            {[
-              { key: "p1", name: p1, val: activation1, setVal: setActivation1 },
-              { key: "p2", name: p2, val: activation2, setVal: setActivation2 },
-            ].map(({ key, name, val, setVal }) => (
-              <div key={key} className="activation-partner">
-                <div className={`activation-name ${key}`}>{name}</div>
-                <div className="activation-value">{val}/10</div>
-                <input type="range" className="activation-slider" min={0} max={10} value={val}
-                  onChange={e => { setVal(+e.target.value); saveActivation(key === "p1" ? +e.target.value : activation1, key === "p2" ? +e.target.value : activation2); }} />
-                <div className="slider-row"><span>0</span><span>10</span></div>
-              </div>
-            ))}
-          </div>
-          <div className={`activation-cue ${shouldPause ? "pause" : "proceed"}`} style={{ marginTop: 12 }}>
-            {shouldPause
-              ? `⚠ Activation is above 6. Pause before continuing. Use Step 2 before attempting any conversation.`
-              : `✓ Both partners are regulated enough to continue. Move to Step 3 — identify upset or triggered, then respond.`}
-          </div>
-        </div>
-      </div>
-
-      {/* Step 2: Pause + Return Time */}
-      {shouldPause && (
-        <div className="section fade-in">
-          <div className="section-title">Step 2 — Pause & Set a Return Time</div>
-          <div className="section-desc">The pause is not abandonment. It is stabilization. The only thing that makes a pause safe for an anxious nervous system is knowing when you're coming back. Say this before you leave the room.</div>
-          <div className="callout rose">"I'm coming back. I just need to reset. I'm not leaving — I need <strong>X minutes/hours</strong> and then I'm back with you."</div>
-          <div className="return-time">
-            <div className="return-time-label">Choose a return time — say it out loud to your partner</div>
-            <div className="return-time-options">
-              {["20 min", "30 min", "1 hour", "After sleep", "Tomorrow morning"].map(t => (
-                <button key={t} className={`return-btn ${returnTime === t ? "selected" : ""}`}
-                  onClick={() => { setReturnTime(t); onSave({ returnTime: t }); }}>{t}</button>
-              ))}
-            </div>
-            {returnTime && <div className="return-time-display">We're returning at: {returnTime} from now. Stay in your own space until then.</div>}
-          </div>
-          <div className="card" style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: 10 }}>Regulate During the Pause</div>
-            {[
-              "🌬 Breathe: inhale 4, hold 4, exhale 6 — repeat 5 times",
-              "👁 Ground: name 5 things you see, 4 you can touch, 3 you hear",
-              "🚶 Move: walk, stretch, cold water on your wrists or face",
-              "📵 No review: do not rehearse your argument or text your partner",
-            ].map((item, i) => <div key={i} style={{ fontSize: "0.82rem", color: "var(--charcoal-mid)", lineHeight: 1.7, padding: "4px 0" }}>{item}</div>)}
-          </div>
-        </div>
-      )}
-
-      {/* The 5-Step Protocol */}
-      <div className="section">
-        <div className="section-title">The 5-Step Protocol — When You Return</div>
-        <div className="section-desc">Once both partners are below 6, run through these steps together.</div>
-        <div className="protocol-steps">
-          {[
-            { label: "Name It", text: "Say out loud: 'We're escalating.' No blame — just observation. Naming the pattern externalizes it.", phrase: '"We\'re escalating."' },
-            { label: "Check Activation", text: "Rate 0–10. If either is above 6 → return to Step 2 (pause). If both below 6 → continue.", phrase: '"I\'m at a ___ right now."' },
-            { label: "Upset or Triggered?", text: "Is this about something happening now — or is it touching an old wound? That answer changes your tone, pace, and repair path.", phrase: '"Is this about now, or is this old?"' },
-            { label: "Respond Intentionally", text: "One feeling. One need. One request. No history stacking. No character attacks.", phrase: '"I felt ___ when ___. I need ___. Can we ___?"' },
-            { label: "Repair if Needed", text: "If escalation happened before you caught it — name what you did, take ownership, offer reconnection. Within 24 hours.", phrase: '"I don\'t like how that went. Can we reset?"' },
-          ].map((s, i) => (
-            <div key={i} className={`protocol-step step-${i + 1}`}>
-              <div className="step-num">{i + 1}</div>
-              <div className="step-content">
-                <div className="step-label">{s.label}</div>
-                <div className="step-text">{s.text}</div>
-                <div className="step-phrase">{s.phrase}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="formula-box">
-        <div className="formula-label">The Formula</div>
-        <div className="formula-text"><span>Feeling</span> + <span>Ownership</span> + <span>Request</span></div>
-      </div>
-
-      <AudioPlayer title="The Escalation Reset" desc="A guided regulation tool for the pause. Use during Step 2." duration={210} />
-      <ScriptsAccordion />
-
-      <div className="bridge-prompt blush" style={{ marginTop: 40 }}>
-        <div>
-          <div style={{ fontFamily: "var(--font-serif)", fontSize: "1rem", color: "var(--ink)", marginBottom: 4 }}>Ready to repair?</div>
-          <div className="bridge-prompt-text">Use the After the Fight path when both partners are below 6.</div>
-        </div>
-        <button className="bridge-btn" onClick={() => onNavigate("repair")}>Go to Repair →</button>
-      </div>
-      <div className="bridge-prompt sage" style={{ marginTop: 12 }}>
-        <div>
-          <div style={{ fontFamily: "var(--font-serif)", fontSize: "1rem", color: "var(--ink)", marginBottom: 4 }}>Want to understand why this keeps happening?</div>
-          <div className="bridge-prompt-text">The Understand Us path maps the cycle underneath.</div>
-        </div>
-        <button className="bridge-btn" style={{ background: "var(--sage)" }} onClick={() => onNavigate("learn")}>Understand the Pattern →</button>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// PATH B: REPAIR
-// ════════════════════════════════════════════════════════════════════════════════
-function RepairPath({ data, onSave, onNavigate }) {
-  const [entries, setEntries] = useState(data.conflictLog || []);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ what: "", escalated: "", underneath: "", usedProtocol: null, worked: "", change: "" });
-  const [glimmers, setGlimmers] = useState(data.glimmers || []);
-  const [glimmerInput, setGlimmerInput] = useState("");
-  const [repairTab, setRepairTab] = useState("framework");
-
-  const saveEntry = () => {
-    if (!formData.what.trim()) return;
-    const updated = [{ ...formData, date: today(), id: Date.now() }, ...entries];
-    setEntries(updated); onSave({ conflictLog: updated });
-    setFormData({ what: "", escalated: "", underneath: "", usedProtocol: null, worked: "", change: "" });
-    setShowForm(false);
-  };
-
-  const addGlimmer = () => {
-    if (!glimmerInput.trim()) return;
-    const updated = [{ text: glimmerInput, date: today(), id: Date.now() }, ...glimmers];
-    setGlimmers(updated); onSave({ glimmers: updated }); setGlimmerInput("");
-  };
-
-  return (
-    <div className="fade-in">
-      <div className="path-header">
-        <div>
-          <div className="path-header-title">After the Conflict</div>
-          <div className="path-header-subtitle">Repair · Revisit · Reconnect</div>
-        </div>
-        <button className="back-btn" onClick={() => onNavigate("home")}>← Home</button>
-      </div>
-
-      <div className="tab-bar">
-        {[["framework","Repair Framework"],["dearm","D.E.A.R. M.A.N."]].map(([id, label]) => (
-          <button key={id} className={`tab-btn ${repairTab === id ? "active" : ""}`} onClick={() => setRepairTab(id)}>{label}</button>
-        ))}
-      </div>
-
-      {repairTab === "framework" && (
-        <div className="fade-in">
-          <div className="section">
-            <div className="section-title">Why Repair Matters</div>
-            <div className="section-desc">Every relationship has ruptures. What separates secure couples from disconnected ones is not the absence of conflict — it's the quality of repair. Repair is what rebuilds the trust that escalation erodes.</div>
-            <div className="callout sage">Repair within 24 hours. The longer you wait, the more the narrative solidifies and resentment pools beneath the surface.</div>
-          </div>
-
-          <div className="section">
-            <div className="section-title">The Rupture-to-Repair Process</div>
-            <div className="section-desc">Repair isn't just an apology. It's a structured return to safety. Both partners should know these steps and be willing to initiate them — regardless of who escalated.</div>
-            <div className="card">
-              {[
-                { num: 1, title: "Name the behavior", desc: "Be specific — not 'I was rude' but 'I raised my voice and interrupted you.'" },
-                { num: 2, title: "Take ownership", desc: "No justification. No 'but you…'. Ownership without conditions." },
-                { num: 3, title: "Acknowledge the impact", desc: "Even if unintended — the impact matters more than the intention." },
-                { num: 4, title: "Name the feeling underneath", desc: "What were you actually feeling? Fear? Rejection? Powerlessness? Name the real thing." },
-                { num: 5, title: "Offer reconnection", desc: "Not what you want to say — what your partner needs to receive right now." },
-              ].map(r => (
-                <div key={r.num} className="repair-step">
-                  <div className="repair-num">{r.num}</div>
-                  <div><div className="repair-title">{r.title}</div><div className="repair-desc">{r.desc}</div></div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="section-title">The 4 Rs of Apology</div>
-            <div className="section-desc">These are language builders — not a script. Use them to form your own words.</div>
-            <div className="card">
-              {[
-                { r: "Regret", desc: "Express genuine remorse for the impact of your behavior, regardless of your intention.", example: "\u201cI\u2019m really sorry that what I said hurt you. That was not okay.\u201d" },
-                { r: "Responsibility", desc: "Own what you did without minimizing, explaining, or deflecting. Just the behavior.", example: "\u201cI was sarcastic and I shut down the conversation. That\u2019s on me.\u201d" },
-                { r: "Recognition", desc: "Acknowledge what the other person experienced — their feelings, their perspective.", example: "\u201cI can see why you felt dismissed. Your point was valid and I didn\u2019t treat it that way.\u201d" },
-                { r: "Remedy", desc: "Offer what you'll do differently. Make it concrete and small — not a grand promise.", example: "\u201cNext time I feel frustrated, I\u2019m going to ask for a pause before I respond.\u201d" },
-              ].map((item, i) => (
-                <div key={i} className="repair-step">
-                  <div className="repair-num">{item.r[0]}</div>
-                  <div>
-                    <div className="repair-title">{item.r}</div>
-                    <div className="repair-desc">{item.desc}</div>
-                    <div style={{ marginTop: 5, fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "0.82rem", color: "var(--charcoal-light)" }}>{item.example}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <AudioPlayer title="Repair Re-Entry" desc="Guided support for returning to your partner after a pause." duration={180} />
-        </div>
-      )}
-
-      {repairTab === "dearm" && (
-        <div className="fade-in">
-          <div className="section">
-            <div className="section-title">Coming Back to the Conversation</div>
-            <div className="section-desc">Once you've repaired the rupture and both partners feel regulated and safe, you can revisit the original issue. D.E.A.R. M.A.N. gives you a structure that's both clear and non-escalating.</div>
-            <div className="callout gold">Only use this when both partners are below a 5/10 activation and when the repair step is complete. This is not for the heat of the moment — it's for returning to a topic once safety is restored.</div>
-          </div>
-
-          <div className="section">
-            <div className="section-title">D.E.A.R. M.A.N.</div>
-            <div className="section-desc">A DBT-based framework for effective communication — especially useful for revisiting difficult topics without re-escalating.</div>
-            <div className="dear-man-grid">
-              {[
-                { letter: "D", word: "Describe", desc: "State the situation factually and objectively. Stick to what actually happened — no interpretations, no emotions yet.", example: "\u201cWhen we were talking last night and I walked away without saying anything...\u201d" },
-                { letter: "E", word: "Express", desc: "Share your feelings clearly and gently. Use \u2018I feel\u2019 — not \u2018you made me feel.\u2019 Own the emotion.", example: "\u201cI felt scared and ashamed right after, because I knew I\u2019d shut down again.\u201d" },
-                { letter: "A", word: "Assert", desc: "Ask for what you need or say no clearly. Don\u2019t assume your partner knows. Be direct without being aggressive.", example: "\u201cWhat I need is to try again with this conversation \u2014 calmly.\u201d" },
-                { letter: "R", word: "Reinforce", desc: "Tell your partner how meeting this need benefits both of you. Connect the ask to the relationship.", example: "\u201cIf we can have this conversation, I think we\u2019ll both feel closer and less stuck.\u201d" },
-                { letter: "M", word: "Mindful", desc: "Stay focused on the goal of the conversation. Don't let yourself be pulled into side arguments or past issues.", example: 'If they deflect: "I hear that. Can we come back to what I just shared for a moment?"' },
-                { letter: "A", word: "Appear Confident", desc: "Use a calm, even tone. Eye contact. Open body language. Even if you're nervous inside — a grounded presence helps your partner feel safe.", example: "Take a breath before you speak. Pause if your voice starts to shake." },
-                { letter: "N", word: "Negotiate", desc: "Be willing to give to get. Ask what they need too. Look for the overlap.", example: "\u201cWhat would make this easier for you? I want us both to feel okay about this.\u201d" },
-              ].map((s, i) => (
-                <div key={i} className="dear-step">
-                  <div className="dear-letter">{s.letter}</div>
-                  <div>
-                    <div className="dear-word">{s.word}</div>
-                    <div className="dear-desc">{s.desc}</div>
-                    <div className="dear-example">{s.example}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <AutoSave label="What topic do we need to revisit?" fieldKey="dearm_topic" data={data} onSave={onSave} minHeight={60} placeholder="Describe the issue you're coming back to..." />
-          <AutoSave label="What do I want to Describe (facts only)?" fieldKey="dearm_describe" data={data} onSave={onSave} minHeight={60} />
-          <AutoSave label="What do I want to Express (my feeling)?" fieldKey="dearm_express" data={data} onSave={onSave} minHeight={60} />
-          <AutoSave label="What do I need to Assert (my ask)?" fieldKey="dearm_assert" data={data} onSave={onSave} minHeight={60} />
-        </div>
-      )}
-
-      <div className="bridge-prompt blush" style={{ marginTop: 40 }}>
-        <div>
-          <div style={{ fontFamily: "var(--font-serif)", fontSize: "1rem", color: "var(--ink)", marginBottom: 4 }}>Would you like to understand why this keeps happening?</div>
-          <div className="bridge-prompt-text">The Understand Us path maps the cycle underneath the fights.</div>
-        </div>
-        <button className="bridge-btn" onClick={() => onNavigate("learn")}>Understand the Pattern →</button>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// PATH C: UNDERSTAND & PREVENT — 5 Sections + Shared Dashboard
-// ════════════════════════════════════════════════════════════════════════════════
-
-const LEARN_TABS = ["profile", "window", "cycle", "deeper", "practice", "shared"];
-const TAB_LABELS = { profile: "Who Am I in Conflict", window: "Window of Tolerance", cycle: "Map Your Loop", deeper: "The Deeper Cycle", practice: "Putting It Into Practice", shared: "Our Shared View" };
-
-function LearnPath({ data, onSave, onSaveShared, sharedData, onNavigate, identity }) {
-  const [tab, setTab] = useState("profile");
-  const completed = data.learnCompleted || {};
-  const markComplete = (t) => onSave({ learnCompleted: { ...completed, [t]: true } });
-  const progressCount = LEARN_TABS.filter(t => completed[t]).length;
-
-  return (
-    <div className="fade-in">
-      <div className="path-header">
-        <div>
-          <div className="path-header-title">Understand & Prevent</div>
-          <div className="path-header-subtitle">{progressCount}/{LEARN_TABS.length} sections complete</div>
-        </div>
-        <button className="back-btn" onClick={() => onNavigate("home")}>← Home</button>
-      </div>
-
-      <div className="learn-progress">
-        {LEARN_TABS.map((t, i) => (
-          <div key={t} className={`learn-progress-step ${completed[t] ? "done" : tab === t ? "active" : ""}`} />
-        ))}
-        <span className="learn-progress-label">{progressCount}/{LEARN_TABS.length}</span>
-      </div>
-
-      <div className="tab-bar">
-        {LEARN_TABS.map(t => (
-          <button key={t} className={`tab-btn ${tab === t ? "active" : ""} ${t === "shared" ? "tab-shared" : ""}`} onClick={() => setTab(t)}>
-            {completed[t] && <span className="tab-check">✓</span>}
-            {TAB_LABELS[t]}
-          </button>
-        ))}
-      </div>
-
-      {tab === "profile" && <ProfileTab data={data} onSave={onSave} identity={identity} onDone={() => { markComplete("profile"); setTab("window"); }} />}
-      {tab === "window" && <WindowTab data={data} onSave={onSave} identity={identity} onDone={() => { markComplete("window"); setTab("cycle"); }} />}
-      {tab === "cycle" && <CycleTab data={data} onSave={onSave} identity={identity} onDone={() => { markComplete("cycle"); setTab("deeper"); }} />}
-      {tab === "deeper" && <DeeperCycleTab data={data} onSave={onSave} identity={identity} onDone={() => { markComplete("deeper"); setTab("practice"); }} />}
-      {tab === "practice" && <PracticeTab data={data} onSave={onSave} identity={identity} onNavigate={onNavigate} onDone={() => { markComplete("practice"); setTab("shared"); }} />}
-      {tab === "shared" && <SharedDashboard data={data} onSave={onSave} sharedData={sharedData} onSaveShared={onSaveShared} identity={identity} onNavigate={onNavigate} onDone={() => { markComplete("shared"); onNavigate("agreement"); }} />}
-    </div>
-  );
-}
-
-// ── SECTION 1: WHO AM I IN CONFLICT ──────────────────────────────────────────
-function ProfileChips({ fieldKey, options, data, onSave, partner }) {
-  const selected = data[fieldKey] || [];
-  const toggle = (v) => {
-    const updated = selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v];
-    onSave({ [fieldKey]: updated });
-  };
-  return (
-    <div className="profile-chips">
-      {options.map(o => (
-        <span key={o} className={`profile-chip ${selected.includes(o) ? `selected-${partner}` : ""}`} onClick={() => toggle(o)}>{o}</span>
-      ))}
-    </div>
-  );
-}
-
-function PartnerPrivateSection({ prefix, data, onSave }) {
-  const p = prefix;
-  const k = (f) => `profile_${p}_${f}`;
-  const pName = partnerName(data, p);
-  return (
-    <div className="fade-in">
-      <div className="private-banner" style={{ background: p === "p1" ? "var(--rose-light)" : "var(--sage-light)", color: p === "p1" ? "var(--rose)" : "var(--sage)" }}>
-        🔒 Private — {pName}'s section. Complete on your own first.
-      </div>
-      <div className="profile-question">
-        <div className="field-label">When conflict begins, I tend to...</div>
-        <ProfileChips fieldKey={k("first_move")} partner={p} data={data} onSave={onSave}
-          options={["Get louder", "Go quiet", "Explain myself", "Leave the room", "Cry", "Shut down", "Push back", "Try to fix it fast"]} />
-      </div>
-      <div className="profile-question">
-        <div className="field-label">What I feel in my body when activated...</div>
-        <ProfileChips fieldKey={k("body_signs")} partner={p} data={data} onSave={onSave}
-          options={["Chest tightens", "Jaw clenches", "Heart races", "Stomach drops", "Go numb", "Tension in shoulders", "Ears get hot", "Feel frozen"]} />
-      </div>
-      <div className="profile-question">
-        <div className="field-label">What I tell myself during conflict...</div>
-        <ProfileChips fieldKey={k("thoughts")} partner={p} data={data} onSave={onSave}
-          options={["They don't care", "I'm being attacked", "I'm going to lose this", "Nothing I say matters", "This is hopeless", "I'm the problem", "They'll leave", "I have to fix this now"]} />
-      </div>
-      <div className="profile-question">
-        <div className="field-label">What I actually feel underneath the reaction...</div>
-        <ProfileChips fieldKey={k("underneath")} partner={p} data={data} onSave={onSave}
-          options={["Scared", "Hurt", "Invisible", "Not enough", "Abandoned", "Trapped", "Overwhelmed", "Alone"]} />
-      </div>
-      <AutoSave label="Anything else about how you show up in conflict?" fieldKey={k("notes")} data={data} onSave={onSave} minHeight={60} partner={p} placeholder="Write anything that doesn't fit above..." />
-    </div>
-  );
-}
-
-function ProfileTab({ data, onSave, identity, onDone }) {
-  const active = identity?.role || "p1";
-  return (
-    <div className="fade-in">
-      <div className="section">
-        <div className="section-title">Who Am I in Conflict?</div>
-        <div className="section-desc">This entire system is built on one premise: you can only control yourself. Before you can understand the cycle you create together, you have to understand what you do. Each partner completes this privately — then you share in the Shared View.</div>
-        <div className="callout sage">Self-awareness before shared awareness. The more clearly you see your own pattern, the more choice you have in the moment.</div>
-      </div>
-      <PartnerPrivateSection prefix={active} data={data} onSave={onSave} />
-      <button className="btn-rose" style={{ marginTop: 24 }} onClick={onDone}>Next: Window of Tolerance →</button>
-    </div>
-  );
-}
-
-// ── SECTION 2: WINDOW OF TOLERANCE ───────────────────────────────────────────
-function WindowTab({ data, onSave, identity, onDone }) {
-  const active = identity?.role || "p1";
-  const p = active;
-
-  return (
-    <div className="fade-in">
-      <div className="section">
-        <div className="section-title">Your Window of Tolerance</div>
-        <div className="section-desc">There's a zone where you can feel stressed, even angry — and still think clearly and stay connected. Outside that window, your body takes over. You cannot resolve conflict outside your window. You must regulate before you repair.</div>
-        <div className="window-zones">
-          <div className="zone above">
-            <div className="zone-label">↑ Above — Hyperarousal</div>
-            <div className="zone-desc">Heart racing. Jaw clenched. Voice rising. Angry, reactive. You say things you don't mean.</div>
-          </div>
-          <div className="zone inside">
-            <div className="zone-label">↔ Inside — Regulated</div>
-            <div className="zone-desc">You can feel upset and still stay present. Disagree without exploding. Listen without shutting down. This is where real conversation happens.</div>
-          </div>
-          <div className="zone below">
-            <div className="zone-label">↓ Below — Hypoarousal</div>
-            <div className="zone-desc">System shuts down. Numb, foggy, frozen. You go quiet — not because you don't care, but because your body hit its limit.</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="section">
-        <div className="private-banner" style={{ background: p === "p1" ? "var(--rose-light)" : "var(--sage-light)", color: p === "p1" ? "var(--rose)" : "var(--sage)" }}>
-          🔒 Private — {partnerName(data, p)}'s window. Complete on your own first.
-        </div>
-        <AutoSave label="Above my window, I notice:" fieldKey={`window_${p}_above`} data={data} onSave={onSave} partner={p} placeholder="Physical signs, thoughts, behaviors..." />
-        <AutoSave label="Below my window, I notice:" fieldKey={`window_${p}_below`} data={data} onSave={onSave} partner={p} placeholder="Signs of shutdown, numbness, going distant..." />
-        <AutoSave label="What helps me return to my window:" fieldKey={`window_${p}_return`} data={data} onSave={onSave} partner={p} placeholder="Movement, breathing, grounding, space..." />
-      </div>
-
-      <div className="section">
-        <div className="section-title">What You're Working Toward</div>
-        <div className="coreg-grid">
-          {["Feeling safer to share what you actually feel", "Less reactive when tension rises", "Feeling closer and more trusting", "Working through disagreements without shutting down", "Asking for what you need without it becoming a fight", "More forgiving — letting things go faster", "Feeling like you're on the same team", "More emotional presence with each other"].map((item, i) => (
-            <div key={i} className="coreg-item"><div className="coreg-dot" />{item}</div>
-          ))}
-        </div>
-        <div className="callout sage" style={{ marginTop: 12 }}>This is what the work is for. Not a perfect relationship — a regulated one.</div>
-      </div>
-
-      <button className="btn-rose" onClick={onDone}>Next: Map Your Loop →</button>
-    </div>
-  );
-}
-
-// ── SECTION 3: MAP YOUR LOOP ──────────────────────────────────────────────────
-function CycleTab({ data, onSave, identity, onDone }) {
-  const active = identity?.role || "p1";
-  const p = active;
-  const cycleKey = `cycleP${p === "p1" ? "1" : "2"}`;
-  const cycleData = data[cycleKey] || {};
-  const updateCycle = (f, v) => onSave({ [cycleKey]: { ...cycleData, [f]: v } });
-
-  return (
-    <div className="fade-in">
-      <div className="section">
-        <div className="section-title">How We Create This Together</div>
-        <div className="section-desc">Every couple stuck in the same fight has a loop. The topic changes, but the pattern underneath stays the same. Map your side privately — then use the Shared View to see it together.</div>
-        <div className="compare-grid">
-          <div className="compare-cell left">
-            <div className="compare-title">Pursue → Withdraw</div>
-            <div className="compare-item">One partner reaches for connection through criticism or intensity.</div>
-            <div className="compare-item">The other pulls away or avoids.</div>
-            <div className="compare-example">Pursuer feels abandoned. Withdrawer feels attacked. Both feel alone.</div>
-          </div>
-          <div className="compare-cell right">
-            <div className="compare-title">Attack → Defend</div>
-            <div className="compare-item">One partner leads with blame or accusation.</div>
-            <div className="compare-item">The other defends, deflects, or counterattacks.</div>
-            <div className="compare-example">Neither feels heard. Conflict escalates without resolution.</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="section">
-        <div className="private-banner" style={{ background: p === "p1" ? "var(--rose-light)" : "var(--sage-light)", color: p === "p1" ? "var(--rose)" : "var(--sage)" }}>
-          🔒 Private — {partnerName(data, p)}'s loop. Complete on your own first.
-        </div>
-        {[
-          { key: "trigger", label: "When I feel...", placeholder: "rejected / dismissed / controlled / invisible" },
-          { key: "reaction", label: "I tend to...", placeholder: "attack / go quiet / push / shut down / pursue" },
-          { key: "partnerFeels", label: "Which makes my partner feel...", placeholder: "attacked / alone / unsafe / smothered" },
-          { key: "longFor", label: "What I'm actually longing for...", placeholder: "to feel safe / to matter / to feel close" },
-        ].map(s => (
-          <div key={s.key} className="cycle-step">
-            <div className="cycle-label">{s.label}</div>
-            <input className="cycle-input" placeholder={s.placeholder} value={cycleData[s.key] || ""} onChange={e => updateCycle(s.key, e.target.value)} />
-          </div>
-        ))}
-        <div className="cycle-loop-note">↻ The enemy is the loop — not your partner.</div>
-      </div>
-
-      <div className="section">
-        <div className="section-title">What's Underneath My Reaction</div>
-        <div className="card">
-          {["Fear of rejection", "Fear of abandonment", "Feeling unseen", "Not good enough", "Feeling controlled", "Unloved or undesired"].map(item => {
-            const fk = `check_${p}_${item}`;
-            return (
-              <div key={item} className="checklist-item">
-                <input type="checkbox" className="checklist-cb" id={fk} checked={!!data[fk]} onChange={e => onSave({ [fk]: e.target.checked })} />
-                <label className="checklist-label" htmlFor={fk}>{item}</label>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <button className="btn-rose" onClick={onDone}>Next: The Deeper Cycle →</button>
-    </div>
-  );
-}
-
-// ── SECTION 4: THE DEEPER CYCLE (EFT) ────────────────────────────────────────
-function EFTChips({ type, options, selected, onToggle }) {
-  return (
-    <div className="eft-chips">
-      {options.map(o => (
-        <span key={o} className={`eft-chip ${type}-chip ${selected.includes(o) ? "selected" : ""}`} onClick={() => onToggle(o)}>{o}</span>
-      ))}
-    </div>
-  );
-}
-
-function EFTPartnerColumn({ prefix, data, onSave }) {
-  const k = (f) => `eft_${prefix}_${f}`;
-  const get = (f) => data[k(f)] || [];
-  const getStr = (f) => data[k(f)] || "";
-  const toggle = (field, val) => {
-    const cur = get(field);
-    onSave({ [k(field)]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] });
-  };
-  const BEHAVIORS = { pursue: ["Criticize","Demand","Push to talk","Accuse","Protest","Chase"], withdraw: ["Go quiet","Shut down","Agree just to end it","Pull away","Become distant","Disappear"] };
-  const selectedMove = getStr("move");
-  const behaviorOptions = selectedMove === "pursue" ? BEHAVIORS.pursue : selectedMove === "withdraw" ? BEHAVIORS.withdraw : [...BEHAVIORS.pursue, ...BEHAVIORS.withdraw];
-  const name = partnerName(data, prefix);
-
-  return (
-    <div className="eft-partner-col">
-      <div className={`eft-partner-header ${prefix}`}>{name}</div>
-
-      <div className="eft-layer behavior">
-        <div className="eft-layer-label">Your move — what your partner sees</div>
-        <div className="move-selector">
-          {[["pursue","I pursue"], ["withdraw","I withdraw"], ["both","Both"]].map(([val, label]) => (
-            <button key={val} className={`move-btn ${getStr("move") === val ? `selected-${val}` : ""}`} onClick={() => onSave({ [k("move")]: val })}>{label}</button>
-          ))}
-        </div>
-        {selectedMove && <EFTChips type="behavior" options={behaviorOptions} selected={get("behaviors")} onToggle={v => toggle("behaviors", v)} />}
-      </div>
-
-      <div className="eft-layer protective">
-        <div className="eft-layer-label">Surface feelings — above the line</div>
-        <EFTChips type="protective" options={["Angry","Frustrated","Anxious","Resentful","Dismissed","Irritated","Jealous","Overwhelmed"]} selected={get("protective")} onToggle={v => toggle("protective", v)} />
-        <input className="eft-write-in" placeholder="write your own..." value={getStr("protective_other")} onChange={e => onSave({ [k("protective_other")]: e.target.value })} />
-      </div>
-
-      <div className="eft-layer vulnerable">
-        <div className="eft-layer-label">Vulnerable feelings — below the line</div>
-        <EFTChips type="vulnerable" options={["Scared","Hurt","Ashamed","Alone","Invisible","Not enough","Abandoned","Unloved","Longing","Hopeless"]} selected={get("vulnerable")} onToggle={v => toggle("vulnerable", v)} />
-        <input className="eft-write-in" placeholder="write your own..." value={getStr("vulnerable_other")} onChange={e => onSave({ [k("vulnerable_other")]: e.target.value })} />
-      </div>
-
-      <div className="eft-layer need">
-        <div className="eft-layer-label">What you're actually reaching for</div>
-        <EFTChips type="need" options={["To know I matter","To feel close","To feel safe enough to open up","To feel seen","To feel like I'm enough","To not be alone in this"]} selected={get("needs")} onToggle={v => toggle("needs", v)} />
-        <input className="eft-write-in" placeholder="write your own..." value={getStr("need_other")} onChange={e => onSave({ [k("need_other")]: e.target.value })} />
-      </div>
-    </div>
-  );
-}
-
-function DeeperCycleTab({ data, onSave, identity, onDone }) {
-  const active = identity?.role || "p1";
-  const p = active;
-  const pName = partnerName(data, p);
-
-  return (
-    <div className="fade-in">
-      <div className="section">
-        <div className="section-title">What's Actually Happening Underneath</div>
-        <p className="eft-intro">What your partner sees during conflict is never the whole story. The behaviors on the surface — the criticism, the silence, the pushing away — are protective moves. Underneath every protective move is a feeling your partner can't see. And underneath that feeling is something you're reaching for.</p>
-        <div className="window-zones">
-          <div className="zone above">
-            <div className="zone-label">↑ Above the Line — What Your Partner Can See</div>
-            <div className="zone-desc">Your <strong>move</strong> (pursue, withdraw) and your <strong>protective emotions</strong> (anger, frustration, anxiety). This is what lands on your partner and triggers their reaction.</div>
-          </div>
-          <div className="zone inside" style={{ background: "var(--gold-light)" }}>
-            <div className="zone-label" style={{ color: "var(--gold)" }}>— The Line of Consciousness —</div>
-            <div className="zone-desc">What you can access when you slow down and look inward.</div>
-          </div>
-          <div className="zone below" style={{ background: "var(--blush-light)" }}>
-            <div className="zone-label" style={{ color: "var(--sage)" }}>↓ Below the Line — What Your Partner Can't See</div>
-            <div className="zone-desc">Your <strong>vulnerable feelings</strong> (scared, hurt, alone) and your <strong>unmet need</strong> (to feel safe, to matter, to be close). This is the real message your protective move is trying to send.</div>
-          </div>
-        </div>
-        <div className="callout rose">Your move is not the message. The cycle locks because the need stays hidden.</div>
-      </div>
-
-      <div className="section">
-        <div className="private-banner" style={{ background: p === "p1" ? "var(--rose-light)" : "var(--sage-light)", color: p === "p1" ? "var(--rose)" : "var(--sage)" }}>
-          🔒 Private — {pName}'s deeper cycle. Complete on your own first.
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <EFTPartnerColumn prefix={p} data={data} onSave={onSave} />
-        </div>
-        <div className="line-of-consciousness">
-          <div className="loc-line" /><div className="loc-label">line of consciousness</div><div className="loc-line" />
-        </div>
-        <div className="eft-shared-core">
-          <div className="eft-core-label">What You Both Share</div>
-          <div className="eft-core-text">Underneath the cycle, you both want the same thing:<br /><em>to feel safe, seen, and loved by each other.</em><br />The cycle is the obstacle — not your partner.</div>
-        </div>
-      </div>
-
-      <button className="btn-rose" onClick={onDone}>Next: Putting It Into Practice →</button>
-    </div>
-  );
-}
-
-// ── SHARED DASHBOARD ──────────────────────────────────────────────────────────
-function SharedDashboard({ data, onSave, sharedData, onSaveShared, identity, onNavigate, onDone }) {
-  const p1 = partnerName(data, "p1");
-  const p2 = partnerName(data, "p2");
-
-  // WOT data
-  const p1Above = data.window_p1_above || "";
-  const p1Below = data.window_p1_below || "";
-  const p1Return = data.window_p1_return || "";
-  const p2Above = data.window_p2_above || "";
-  const p2Below = data.window_p2_below || "";
-  const p2Return = data.window_p2_return || "";
-
-  // Cycle data
-  const cycleP1 = data.cycleP1 || {};
-  const cycleP2 = data.cycleP2 || {};
-
-  // EFT data
-  const p1Move = data["eft_p1_move"] || "";
-  const p2Move = data["eft_p2_move"] || "";
-  const p1Vulnerable = (data["eft_p1_vulnerable"] || []).join(", ") || "_____";
-  const p2Vulnerable = (data["eft_p2_vulnerable"] || []).join(", ") || "_____";
-  const p1Need = (data["eft_p1_needs"] || []).join(", ") || "_____";
-  const p2Need = (data["eft_p2_needs"] || []).join(", ") || "_____";
-
-  const hasP1WOT = !!(p1Above || p1Below);
-  const hasP2WOT = !!(p2Above || p2Below);
-  const hasP1Cycle = !!(cycleP1.trigger || cycleP1.reaction);
-  const hasP2Cycle = !!(cycleP2.trigger || cycleP2.reaction);
-  const hasP1EFT = !!(data["eft_p1_move"] || (data["eft_p1_vulnerable"] || []).length);
-  const hasP2EFT = !!(data["eft_p2_move"] || (data["eft_p2_vulnerable"] || []).length);
-
-  return (
-    <div className="fade-in">
-      <div className="section">
-        <div className="section-title">Our Shared View</div>
-        <div className="section-desc">Both partners have completed their private sections. This is where you come together — to read each other's maps, see the combined cycle, and reflect as a couple. Sit together for this one.</div>
-        <div className="callout gold">Only open this when both of you are regulated (both below 5/10). This is not for conflict — it's for understanding. If it starts to activate either partner, pause and use Path A first.</div>
-      </div>
-
-      {/* Goals reminder */}
-      {(sharedData.goals_change || sharedData.goals_success) && (
-        <div className="card" style={{ marginBottom: 24, borderLeft: "3px solid var(--gold)" }}>
-          <div style={{ fontWeight: 700, fontSize: "0.76rem", color: "var(--gold)", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 8 }}>🎯 Why we're doing this</div>
-          {sharedData.goals_change && <div style={{ fontSize: "0.84rem", color: "var(--charcoal-mid)", marginBottom: 6 }}><strong>What we want to change:</strong> {sharedData.goals_change}</div>}
-          {sharedData.goals_success && <div style={{ fontSize: "0.84rem", color: "var(--charcoal-mid)" }}><strong>What success looks like:</strong> {sharedData.goals_success}</div>}
-        </div>
-      )}
-
-      <div className="goals-sync-note">
-        <div className="goals-sync-dot" />
-        Shared — updates from either partner appear here automatically
-      </div>
-
-      {/* Relationship WOT */}
-      <div className="section">
-        <div className="section-title">Our Relationship Window of Tolerance</div>
-        <div className="section-desc">What each of you mapped privately — now visible side by side.</div>
-        <div className="rel-wot">
-          <div className="rel-wot-rows">
-            <div className="rel-wot-row">
-              <div className="rel-wot-cell rose">
-                <div className="rel-wot-cell-label">{p1} — Above the window</div>
-                <div className="rel-wot-cell-text">{hasP1WOT ? p1Above || p1Below : <span className="empty-wot">{p1} hasn't completed this yet</span>}</div>
-              </div>
-              <div className="rel-wot-cell sage">
-                <div className="rel-wot-cell-label">{p2} — Above the window</div>
-                <div className="rel-wot-cell-text">{hasP2WOT ? p2Above || p2Below : <span className="empty-wot">{p2} hasn't completed this yet</span>}</div>
-              </div>
-            </div>
-            <div className="rel-wot-row">
-              <div className="rel-wot-cell rose">
-                <div className="rel-wot-cell-label">{p1} — Returns by</div>
-                <div className="rel-wot-cell-text">{p1Return || <span className="empty-wot">—</span>}</div>
-              </div>
-              <div className="rel-wot-cell sage">
-                <div className="rel-wot-cell-label">{p2} — Returns by</div>
-                <div className="rel-wot-cell-text">{p2Return || <span className="empty-wot">—</span>}</div>
-              </div>
-            </div>
-          </div>
-          <SharedAutoSave label="What does our combined dysregulation look like? What's the tell?" fieldKey="shared_window_combined" sharedData={sharedData} onSaveShared={onSaveShared} minHeight={70} placeholder="The pattern we both recognize as: we're both outside our windows..." />
-        </div>
-      </div>
-
-      {/* Combined Loop Narrative */}
-      <div className="section">
-        <div className="section-title">Our Combined Cycle</div>
-        <div className="section-desc">Read this aloud together. This is the cycle you create — not because you're bad at relationships, but because two nervous systems in threat mode lock into each other.</div>
-        <div className="card">
-          {(hasP1Cycle || hasP2Cycle) ? (
-            <div style={{ lineHeight: 2.2 }}>
-              {[
-                `When ${p1} feels ${cycleP1.trigger || "___"}...`,
-                `...they tend to ${cycleP1.reaction || "___"}.`,
-                `This makes ${p2} feel ${cycleP2.trigger || "___"}...`,
-                `...so they ${cycleP2.reaction || "___"}.`,
-                `Which confirms ${p1}\u2019s fear: ${cycleP1.partnerFeels || "___"}.`,
-                `And the loop starts again.`,
-              ].map((line, i) => (
-                <div key={i} style={{ fontSize: "0.9rem", fontFamily: "var(--font-serif)", fontStyle: i < 5 ? "italic" : "normal", color: i === 5 ? "var(--charcoal-light)" : "var(--charcoal-mid)", paddingLeft: i > 0 && i < 5 ? "14px" : "0" }}>
-                  {line}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-wot">Both partners need to complete Section 3 (Map Your Loop) first.</div>
-          )}
-        </div>
-        <div style={{ textAlign: "center", marginTop: 8, fontSize: "0.78rem", color: "var(--charcoal-light)", fontStyle: "italic" }}>↻ The enemy is the loop — not your partner.</div>
-        <SharedAutoSave label="What do you notice about your combined loop? What surprised you?" fieldKey="shared_cycleReflection" sharedData={sharedData} onSaveShared={onSaveShared} minHeight={70} placeholder="What landed when you saw it together?" />
-      </div>
-
-      {/* Bridge Statements */}
-      <div className="section">
-        <div className="section-title">Bridge Statements</div>
-        <div className="section-desc">Say these to each other when you're calm. These are built from what each of you mapped in Section 4 — The Deeper Cycle.</div>
-        <div className="callout sage" style={{ marginBottom: 14 }}>⚠ Only share these when both partners are below 5/10 activation. If either partner floods while reading, pause. Use Path A first.</div>
-        <div className="eft-bridge">
-          {[
-            { name: p1, move: p1Move, vulnerable: p1Vulnerable, need: p1Need, hasData: hasP1EFT },
-            { name: p2, move: p2Move, vulnerable: p2Vulnerable, need: p2Need, hasData: hasP2EFT },
-          ].map(({ name, move, vulnerable, need, hasData }) => (
-            <div key={name}>
-              <div className="eft-bridge-title">{name}'s Bridge Statement</div>
-              {hasData ? (
-                <div className="eft-bridge-template">
-                  "When I <span>{move || "___"}</span>, I'm not trying to hurt you.<br />
-                  I'm actually feeling <span>{vulnerable}</span>.<br />
-                  What I'm really reaching for is <span>{need}</span>.<br />
-                  The cycle is the problem — not you."
-                </div>
-              ) : (
-                <div style={{ padding: "12px 16px", background: "var(--sand)", borderRadius: "var(--radius)", marginBottom: 14, fontSize: "0.82rem", color: "var(--charcoal-light)", fontStyle: "italic" }}>
-                  {name} needs to complete Section 4 first.
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <SharedAutoSave label="What came up when you heard each other's bridge statement?" fieldKey="shared_eftReflection" sharedData={sharedData} onSaveShared={onSaveShared} placeholder="What landed differently when you could see each other's hidden layer?" />
-      </div>
-
-      {/* Profile side-by-side */}
-      <div className="section">
-        <div className="section-title">How Each of Us Shows Up</div>
-        <div className="section-desc">What each partner mapped in Section 1 — Who Am I in Conflict.</div>
-        <div className="rel-wot">
-          <div className="rel-wot-rows">
-            {[["p1", p1], ["p2", p2]].map(([key, name]) => {
-              const k = (f) => `profile_${key}_${f}`;
-              const moves = (data[k("first_move")] || []).join(", ");
-              const body = (data[k("body_signs")] || []).join(", ");
-              const thoughts = (data[k("thoughts")] || []).join(", ");
-              const underneath = (data[k("underneath")] || []).join(", ");
-              const notes = data[k("notes")] || "";
-              const hasData = moves || body;
-              return (
-                <div key={key} className={`rel-wot-cell ${key === "p1" ? "rose" : "sage"}`} style={{ marginBottom: 8 }}>
-                  <div className="rel-wot-cell-label">{name}</div>
-                  {hasData ? (
-                    <div style={{ fontSize: "0.8rem", color: "var(--charcoal-mid)", lineHeight: 1.8 }}>
-                      {moves && <div><strong>Moves:</strong> {moves}</div>}
-                      {body && <div><strong>Body:</strong> {body}</div>}
-                      {thoughts && <div><strong>Tells self:</strong> {thoughts}</div>}
-                      {underneath && <div><strong>Underneath:</strong> {underneath}</div>}
-                      {notes && <div><strong>Also:</strong> {notes}</div>}
-                    </div>
-                  ) : (
-                    <div className="empty-wot">{name} hasn't completed Section 1 yet.</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <SharedAutoSave label="Reflect together: what did you learn about each other?" fieldKey="shared_profile_reflect" sharedData={sharedData} onSaveShared={onSaveShared} minHeight={70} placeholder="What surprised you? What do you want your partner to know you now understand?" />
-      </div>
-
-      <button className="btn-rose" onClick={onDone}>Complete: Sign the Agreement →</button>
-    </div>
-  );
-}
-
-// ── SECTION 5: PUTTING IT INTO PRACTICE ──────────────────────────────────────
-function PracticeTab({ data, onSave, identity, onNavigate, onDone }) {
-  const [triggers, setTriggers] = useState(data.myTriggers || [{ id: 1, trigger: "", tell: "", cope: "", need: "" }]);
-
-  const updateTrigger = (id, field, val) => {
-    const updated = triggers.map(t => t.id === id ? { ...t, [field]: val } : t);
-    setTriggers(updated); onSave({ myTriggers: updated });
-  };
-  const addTrigger = () => {
-    if (triggers.length >= 5) return;
-    const updated = [...triggers, { id: Date.now(), trigger: "", tell: "", cope: "", need: "" }];
-    setTriggers(updated); onSave({ myTriggers: updated });
-  };
-
-  return (
-    <div className="fade-in">
-      <div className="section">
-        <div className="section-title">From Understanding to Action</div>
-        <div className="section-desc">You now have a map. The question is what you'll do with it. This section is where understanding becomes practice — specific enough to use in the actual moment.</div>
-      </div>
-
-      <div className="section">
-        <div className="section-title">My Named Triggers (3–5 max)</div>
-        <div className="section-desc">Name the specific situations that reliably push you outside your window. The more precisely you can name a trigger, the more quickly you'll recognize it — and catch yourself before the cycle engages.</div>
-        {triggers.map((t, i) => (
-          <div key={t.id} className="card" style={{ marginBottom: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "var(--gold)", marginBottom: 10, letterSpacing: "0.05em", textTransform: "uppercase" }}>Trigger {i + 1}</div>
-            <div className="field-group">
-              <div className="field-label">The trigger</div>
-              <input className="trigger-input" placeholder="When my partner says / does / doesn't do..." value={t.trigger} onChange={e => updateTrigger(t.id, "trigger", e.target.value)} />
-            </div>
-            <div className="field-group">
-              <div className="field-label">What I tell myself in that moment</div>
-              <input className="trigger-input" placeholder="The story I run in my head..." value={t.tell} onChange={e => updateTrigger(t.id, "tell", e.target.value)} />
-            </div>
-            <div className="field-group">
-              <div className="field-label">How I cope (what I actually do)</div>
-              <input className="trigger-input" placeholder="My automatic response..." value={t.cope} onChange={e => updateTrigger(t.id, "cope", e.target.value)} />
-            </div>
-            <div className="field-group" style={{ marginBottom: 0 }}>
-              <div className="field-label">What I actually need in that moment</div>
-              <input className="trigger-input" placeholder="The underlying need this trigger is touching..." value={t.need} onChange={e => updateTrigger(t.id, "need", e.target.value)} />
-            </div>
-          </div>
-        ))}
-        {triggers.length < 5 && (
-          <button className="add-trigger-btn" onClick={addTrigger}>+ Add another trigger ({triggers.length}/5)</button>
-        )}
-      </div>
-
-      <div className="section">
-        <div className="section-title">Observations & Action Items</div>
-        <AutoSave label="What pattern do I see across my triggers?" fieldKey="practice_observations" data={data} onSave={onSave} minHeight={70} placeholder="What do they have in common? What does that tell you?" />
-        <AutoSave label="My action items — what I'm going to do differently" fieldKey="practice_actions" data={data} onSave={onSave} minHeight={80} placeholder="Specific, small, behavioral changes. Not 'be less reactive' — 'when I feel X, I will Y.'" />
-        <AutoSave label="What I want my partner to know about my triggers" fieldKey="practice_share" data={data} onSave={onSave} minHeight={70} placeholder="Context, background, or requests that would help them support you..." />
-      </div>
-
-      <div className="bridge-prompt sage" style={{ marginTop: 40 }}>
-        <div>
-          <div style={{ fontFamily: "var(--font-serif)", fontSize: "1rem", color: "var(--ink)", marginBottom: 4 }}>Ready to put this into practice?</div>
-          <div className="bridge-prompt-text">Strengthen unlocks your Conflict Log, Glimmer Journal, Weekly Inspection, and Daily Reset.</div>
-        </div>
-        <button className="bridge-btn" style={{ background: "var(--sage)" }} onClick={() => onNavigate("strengthen")}>Go to Strengthen →</button>
-      </div>
-
-      <div style={{ marginTop: 24 }}>
-        <button className="btn-rose" onClick={onDone}>Complete: Sign the Agreement →</button>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// PATH: STRENGTHEN (V3 — unlocks after one path completed)
-// ════════════════════════════════════════════════════════════════════════════════
-function StrengthenPath({ data, onSave, identity }) {
-  const [tab, setTab] = useState("log");
-  const [entries, setEntries] = useState(data.conflictLog || []);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ what: "", escalated: "", underneath: "", usedProtocol: null, worked: "", change: "" });
-  const [glimmers, setGlimmers] = useState(data.glimmers || []);
-  const [glimmerInput, setGlimmerInput] = useState("");
-  const [inspection, setInspection] = useState(data.weeklyInspection || {});
-  const [safetyA, setSafetyA] = useState(data.weeklyInspection?.safetyA || 5);
-  const [safetyB, setSafetyB] = useState(data.weeklyInspection?.safetyB || 5);
-  const p1 = partnerName(data, "p1");
-  const p2 = partnerName(data, "p2");
-
-  const saveEntry = () => {
-    if (!formData.what.trim()) return;
-    const updated = [{ ...formData, date: today(), id: Date.now() }, ...entries];
-    setEntries(updated); onSave({ conflictLog: updated });
-    setFormData({ what: "", escalated: "", underneath: "", usedProtocol: null, worked: "", change: "" });
-    setShowForm(false);
-  };
-
-  const addGlimmer = () => {
-    if (!glimmerInput.trim()) return;
-    const updated = [{ text: glimmerInput, date: today(), id: Date.now() }, ...glimmers];
-    setGlimmers(updated); onSave({ glimmers: updated }); setGlimmerInput("");
-  };
-
-  const saveInspection = (updates) => {
-    const updated = { ...inspection, ...updates, date: today() };
-    setInspection(updated); onSave({ weeklyInspection: updated });
-  };
-
-  return (
-    <div className="fade-in">
-      <div className="path-header">
-        <div>
-          <div className="path-header-title">Strengthen</div>
-          <div className="path-header-subtitle">Maintenance tools · Conflict Log · Glimmer Journal · Weekly Inspection</div>
-        </div>
-      </div>
-
-      <div className="tab-bar">
-        {[["log","Conflict Log"],["glimmers","Glimmer Journal"],["inspection","Weekly Inspection"],["daily","Daily Reset"]].map(([id, label]) => (
-          <button key={id} className={`tab-btn ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{label}</button>
-        ))}
-      </div>
-
-      {tab === "log" && (
-        <div className="fade-in">
-          <div className="section">
-            <div className="section-desc">Track conflicts over time to identify patterns. Each entry builds your collective understanding of what triggers the cycle and what helps repair it.</div>
-            <div className="log-header">
-              <div>
-                <div className="section-title" style={{ marginBottom: 2 }}>Conflict Log</div>
-                <div className="log-count">{entries.length} {entries.length === 1 ? "entry" : "entries"}</div>
-              </div>
-              <button className="btn-primary" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ New Entry"}</button>
-            </div>
-
-            {showForm && (
-              <div className="new-entry-form fade-in">
-                <div className="new-entry-title">Log this conflict</div>
-                {[
-                  { label: "What happened (factually)", key: "what", placeholder: "Describe what occurred without interpretation..." },
-                  { label: "What escalated it", key: "escalated", placeholder: "What specific moment turned the heat up?" },
-                  { label: "What I was feeling underneath", key: "underneath", placeholder: "Beneath the reaction, what was the real feeling?" },
-                ].map(({ label, key, placeholder }) => (
-                  <div key={key} className="field-group">
-                    <div className="field-label">{label}</div>
-                    <textarea className="textarea-field" style={{ minHeight: 60 }} placeholder={placeholder} value={formData[key]} onChange={e => setFormData({ ...formData, [key]: e.target.value })} />
-                  </div>
-                ))}
-                <div className="field-group">
-                  <div className="field-label">Did we use the protocol?</div>
-                  <div className="protocol-toggle">
-                    <button className={`toggle-btn ${formData.usedProtocol === true ? "active-yes" : ""}`} onClick={() => setFormData({ ...formData, usedProtocol: true })}>✓ Yes</button>
-                    <button className={`toggle-btn ${formData.usedProtocol === false ? "active-no" : ""}`} onClick={() => setFormData({ ...formData, usedProtocol: false })}>✗ No</button>
-                  </div>
-                </div>
-                {[
-                  { label: "What worked", key: "worked" },
-                  { label: "What we'd do differently", key: "change" },
-                ].map(({ label, key }) => (
-                  <div key={key} className="field-group">
-                    <div className="field-label">{label}</div>
-                    <textarea className="textarea-field" style={{ minHeight: 55 }} value={formData[key]} onChange={e => setFormData({ ...formData, [key]: e.target.value })} />
-                  </div>
-                ))}
-                <div className="form-actions">
-                  <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                  <button className="btn-primary" onClick={saveEntry}>Save Entry</button>
-                </div>
-              </div>
-            )}
-
-            {entries.length === 0 && !showForm && (
-              <div className="empty-state"><div className="empty-icon">📋</div><div className="empty-text">No entries yet. Log your first conflict to start tracking patterns over time.</div></div>
-            )}
-            {entries.map(e => (
-              <div key={e.id} className="log-entry">
-                <div className="log-entry-header">
-                  <div className="log-date">{formatDate(e.date)}</div>
-                  {e.usedProtocol !== null && <div className={`log-protocol-badge ${e.usedProtocol ? "yes" : "no"}`}>{e.usedProtocol ? "✓ Protocol Used" : "✗ Protocol Skipped"}</div>}
-                </div>
-                {e.what && <div className="log-field"><div className="log-field-label">What happened</div><div className="log-field-value">{e.what}</div></div>}
-                {e.underneath && <div className="log-field"><div className="log-field-label">Underneath</div><div className="log-field-value">{e.underneath}</div></div>}
-                {e.worked && <div className="log-field"><div className="log-field-label">What worked</div><div className="log-field-value">{e.worked}</div></div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "glimmers" && (
-        <div className="fade-in">
-          <div className="section">
-            <div className="section-title">Glimmer Journal</div>
-            <div className="section-desc">Glimmers are micro-moments that say: "I'm trying." "I see you." Small moments repeated consistently become structural reinforcement. The 3:1 Rule — for every stress fracture you name, name three reinforcements.</div>
-            <div className="glimmer-input-area">
-              <input className="glimmer-input" placeholder="This week I noticed my partner..." value={glimmerInput} onChange={e => setGlimmerInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addGlimmer(); }} />
-              <button className="glimmer-add-btn" onClick={addGlimmer}>Add</button>
-            </div>
-            {glimmers.length === 0 && <div className="empty-state" style={{ marginTop: 16 }}><div className="empty-icon">✦</div><div className="empty-text">No glimmers yet. What small moment of effort or safety have you noticed this week?</div></div>}
-            {glimmers.map(g => (
-              <div key={g.id} className="glimmer-entry">
-                <span className="glimmer-icon">✦</span>
-                <div><div className="glimmer-text">{g.text}</div><div className="glimmer-date">{formatDate(g.date)}</div></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "inspection" && (
-        <div className="fade-in">
-          <div className="section">
-            <div className="section-title">Weekly Structural Inspection</div>
-            <div className="section-desc">15 minutes. No screens. Both partners answer honestly. A foundation that isn't maintained develops new stress fractures.</div>
-            <div className="card">
-              {[
-                { name: p1, key: "safetyA", val: safetyA, setVal: setSafetyA },
-                { name: p2, key: "safetyB", val: safetyB, setVal: setSafetyB },
-              ].map(({ name, key, val, setVal }) => (
-                <div key={key} className="inspection-question">
-                  <div className="field-label">Foundation Safety — {name}</div>
-                  <div className="slider-value">{val}/10</div>
-                  <input type="range" className="inspection-slider" min={0} max={10} value={val}
-                    onChange={e => setVal(+e.target.value)}
-                    onMouseUp={() => saveInspection({ [key]: val })} onTouchEnd={() => saveInspection({ [key]: val })} />
-                  <div className="slider-row"><span>0 — Critical</span><span>10 — Strong</span></div>
-                </div>
-              ))}
-              <AutoSave label="Where did we reinforce the foundation this week?" fieldKey="insp_reinforce" data={data} onSave={onSave} placeholder="Moments of repair, effort, connection..." />
-              <AutoSave label="Where did stress fractures appear?" fieldKey="insp_fractures" data={data} onSave={onSave} placeholder="Patterns that came up, difficult moments..." />
-              <AutoSave label="What needs reinforcement this week?" fieldKey="insp_needs" data={data} onSave={onSave} placeholder="Intentions for the coming week..." />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === "daily" && (
-        <div className="fade-in">
-          <div className="section">
-            <div className="section-title">The Daily 60-Second Reset</div>
-            <div className="section-desc">Each night. Tiny. Consistent. Neural rewiring happens through repetition, not intensity.</div>
-            <div className="daily-reset">
-              <div className="daily-prompt"><div className="daily-prompt-q">One thing I appreciated today</div><AutoSave fieldKey="daily_appreciate" data={data} onSave={onSave} minHeight={45} /></div>
-              <div className="daily-prompt"><div className="daily-prompt-q">One thing my partner did well</div><AutoSave fieldKey="daily_partner" data={data} onSave={onSave} minHeight={45} /></div>
-              <div className="daily-prompt"><div className="daily-prompt-q">One effort I noticed</div><AutoSave fieldKey="daily_effort" data={data} onSave={onSave} minHeight={45} /></div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// AGREEMENT
-// ════════════════════════════════════════════════════════════════════════════════
-function AgreementPath({ data, sharedData, onSaveShared, onNavigate }) {
-  const [sig1, setSig1] = useState((sharedData && sharedData.sig1) || "");
-  const [sig2, setSig2] = useState((sharedData && sharedData.sig2) || "");
-  const [signed, setSigned] = useState(!!(sharedData && sharedData.agreementSigned));
-
-  const handleSign = () => {
-    if (!sig1.trim() || !sig2.trim()) return;
-    onSaveShared({ sig1, sig2, agreementSigned: today() }); setSigned(true);
-  };
-
-  return (
-    <div className="fade-in">
-      <div className="path-header">
-        <span className="path-header-icon">🤝</span>
-        <div>
-          <div className="path-header-title">The Foundation Reset Agreement</div>
-          <div className="path-header-subtitle">Your commitment to protecting the structure</div>
-        </div>
-        <button className="back-btn" onClick={() => onNavigate("home")}>← Home</button>
-      </div>
-
-      <p className="agreement-intro">Before you close this toolkit, read these commitments together. This is not a contract — it is a choice. A declaration that you are both willing to do something different.</p>
-
-      <div className="card">
-        {[
-          { num: 1, title: "We Commit to Safety First", text: "We will not use name-calling, character attacks, or threats during conflict. Emotional safety is the foundation of everything else." },
-          { num: 2, title: "We Commit to the STOP Skill", text: "Before we say anything reactive, we will stop, breathe, and observe what's happening in our own bodies. We commit to catching ourselves first." },
-          { num: 3, title: "We Commit to Pausing When Activated", text: "If either partner rates activation above 6/10, we will pause and name a return time. A pause is not abandonment — it is stabilization." },
-          { num: 4, title: "We Commit to Present-Focused Conflict", text: "We will address one issue at a time. We will not stack past grievances onto current conversations." },
-          { num: 5, title: "We Commit to Repair", text: "If escalation happens, we will attempt repair within 24 hours. We will name the behavior, take ownership, and offer reconnection." },
-          { num: 6, title: "We Commit to Reinforcement", text: "We will actively look for glimmers and reinforce progress. Safety is built through repeated small shifts, not grand gestures." },
-        ].map(c => (
-          <div key={c.num} className="commitment">
-            <div className="commitment-num">{c.num}</div>
-            <div><div className="commitment-title">{c.title}</div><div className="commitment-text">{c.text}</div></div>
-          </div>
-        ))}
-      </div>
-
-      {!signed ? (
-        <>
-          <div className="sig-row">
-            <div className="sig-field">
-              <input placeholder={(sharedData && sharedData.name_p1) || "Partner 1 name"} value={sig1} onChange={e => setSig1(e.target.value)} />
-              <div className="sig-label">Partner 1</div>
-            </div>
-            <div className="sig-field">
-              <input placeholder={(sharedData && sharedData.name_p2) || "Partner 2 name"} value={sig2} onChange={e => setSig2(e.target.value)} />
-              <div className="sig-label">Partner 2</div>
-            </div>
-          </div>
-          <button className="btn-rose" onClick={handleSign} disabled={!sig1.trim() || !sig2.trim()}>Sign the Agreement →</button>
-        </>
-      ) : (
-        <div className="agreement-saved">
-          <div className="badge">✓ Signed — {formatDate(sharedData && sharedData.agreementSigned)}</div>
-          <div style={{ marginTop: 8, fontSize: "0.82rem", color: "var(--charcoal-light)" }}>{(sharedData && sharedData.sig1) || ""} & {(sharedData && sharedData.sig2) || ""}</div>
-        </div>
-      )}
-
-      <div className="agreement-tagline">"It is not you vs. me. It is us protecting the structure."</div>
-
-      <div style={{ textAlign: "center", marginTop: 28, padding: "22px", background: "var(--sand)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "0.98rem", color: "var(--charcoal)", marginBottom: 7 }}>This Is the Foundation. Not the Finish Line.</div>
-        <div style={{ fontSize: "0.8rem", color: "var(--charcoal-light)", lineHeight: 1.7, marginBottom: 14 }}>When you're ready to go deeper — into the patterns beneath the patterns, the attachment wounds driving the loop — that's where clinical work begins.</div>
-        <a href="https://innerpathwaysmft.com" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", background: "var(--charcoal)", color: "white", padding: "10px 22px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: 700, textDecoration: "none", letterSpacing: "0.04em" }}>Book a Free Consultation →</a>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// ONBOARDING — runs once per device. Step 1: names + role. Step 2: couple code.
-// ════════════════════════════════════════════════════════════════════════════════
-function OnboardingScreen({ onComplete }) {
-  const [step, setStep] = useState(1);
-  const [myName, setMyName] = useState("");
-  const [partnerName_, setPartnerName_] = useState("");
-  const [role, setRole] = useState("p1");
-  const [codeMode, setCodeMode] = useState("create"); // "create" | "join"
-  const [coupleCode, setCoupleCode] = useState(() => generateCoupleCode());
-  const [joinCode, setJoinCode] = useState("");
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState("");
-
-  const step1Ready = myName.trim().length > 0 && partnerName_.trim().length > 0;
-
-  const handleStep1 = () => { if (step1Ready) setStep(2); };
-
-  const handleCreate = () => {
-    const identity = {
-      role, myName: myName.trim(), partnerName: partnerName_.trim(),
-      coupleCode, createdAt: new Date().toISOString(),
-    };
-    const initialPrivate = {};
-    // Seed shared data with partner names
-    const initialShared = role === "p1"
-      ? { name_p1: myName.trim(), name_p2: partnerName_.trim() }
-      : { name_p1: partnerName_.trim(), name_p2: myName.trim() };
-    saveIdentity(identity);
-    savePrivate(initialPrivate);
-    saveShared(coupleCode, initialShared);
-    onComplete(identity, initialPrivate, initialShared);
-  };
-
-  const handleJoin = async () => {
-    const code = joinCode.trim().toUpperCase();
-    if (!code) return;
-    setJoining(true);
-    setJoinError("");
+    if (!email.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setLoading(true);
     try {
-      const existing = await loadShared(code);
-      const identity = {
-        role, myName: myName.trim(), partnerName: partnerName_.trim(),
-        coupleCode: code, createdAt: new Date().toISOString(),
-      };
-      const initialPrivate = {};
-      // Merge our names into shared
-      const merged = {
-        ...existing,
-        ...(role === "p1"
-          ? { name_p1: myName.trim(), name_p2: partnerName_.trim() }
-          : { name_p1: partnerName_.trim(), name_p2: myName.trim() })
-      };
-      saveIdentity(identity);
-      savePrivate(initialPrivate);
-      await saveShared(code, merged);
-      onComplete(identity, initialPrivate, merged);
-    } catch(e) {
-      setJoinError("Could not connect. Check the code and try again.");
+      const { error: authError } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: { confirmation_code: code.trim().toUpperCase() },
+        },
+      });
+      if (authError) throw authError;
+      setSent(true);
+    } catch (e) {
+      setError(e.message || "Something went wrong. Please try again.");
     } finally {
-      setJoining(false);
+      setLoading(false);
     }
-  };
+  }
 
-  return (
-    <div className="onboard-screen">
-      <div className="onboard-card">
-        <div className="onboard-logo"><Logo /></div>
-        <div className="onboard-eyebrow">A Therapist-Designed Escalation Interruption System</div>
-        <h1 className="onboard-heading">Rewire<br /><em>the Fight</em></h1>
-
-        {step === 1 && (
-          <>
-            <p className="onboard-sub">This is your private copy. Your partner sets up their own — then you connect with a couple code to sync your shared work.</p>
-            <hr className="onboard-divider" />
-            <div className="onboard-step-title">What's your name?</div>
-            <div className="onboard-name-row">
-              <label className="onboard-name-label">Your first name</label>
-              <input className="onboard-name-input" placeholder="e.g. Jamie" value={myName}
-                onChange={e => setMyName(e.target.value)} autoFocus
-                onKeyDown={e => { if (e.key === "Enter" && step1Ready) handleStep1(); }} />
-            </div>
-            <div className="onboard-name-row" style={{ marginTop: 12 }}>
-              <label className="onboard-name-label">Your partner's first name</label>
-              <input className="onboard-name-input" placeholder="e.g. Alex" value={partnerName_}
-                onChange={e => setPartnerName_(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && step1Ready) handleStep1(); }} />
-            </div>
-            <hr className="onboard-divider" />
-            <div className="onboard-step-title">Which partner are you?</div>
-            <div className="onboard-step-sub">Sets your color coding. Either is fine.</div>
-            <div className="onboard-role-select">
-              {[["p1","Partner 1"],["p2","Partner 2"]].map(([key, label]) => (
-                <button key={key} className={`role-btn ${role === key ? `selected-${key}` : ""}`} onClick={() => setRole(key)}>
-                  <div className="role-label">{label}</div>
-                  <div className="role-name-preview">{myName || "—"}</div>
-                </button>
-              ))}
-            </div>
-            <button className={`onboard-submit ${step1Ready ? "ready" : ""}`} onClick={handleStep1} disabled={!step1Ready}>
-              Next: Connect with {partnerName_.trim() || "your partner"} →
-            </button>
-          </>
-        )}
-
-        {step === 2 && (
-          <>
-            <p className="onboard-sub">Connect your workbook with {partnerName_.trim()}'s so your shared work — goals, shared views, the agreement — stays in sync.</p>
-            <hr className="onboard-divider" />
-            <div className="onboard-code-tabs">
-              <button className={`code-tab ${codeMode === "create" ? "active" : ""}`} onClick={() => setCodeMode("create")}>
-                I'm setting up first
-              </button>
-              <button className={`code-tab ${codeMode === "join" ? "active" : ""}`} onClick={() => setCodeMode("join")}>
-                My partner already set up
-              </button>
-            </div>
-
-            {codeMode === "create" && (
-              <div className="code-create-box">
-                <div className="onboard-step-title">Your couple code</div>
-                <div className="onboard-step-sub">Share this code with {partnerName_.trim()}. They'll enter it when they set up their workbook. Keep it somewhere easy to find.</div>
-                <div className="couple-code-display">{coupleCode}</div>
-                <button className="code-regen-btn" onClick={() => setCoupleCode(generateCoupleCode())}>Generate new code ↺</button>
-                <div className="onboard-note">Your private reflections never leave this device. Only the shared view (goals, combined cycle, agreement) syncs between you.</div>
-                <button className="onboard-submit ready" onClick={handleCreate}>Open My Workbook →</button>
-              </div>
-            )}
-
-            {codeMode === "join" && (
-              <div className="code-join-box">
-                <div className="onboard-step-title">Enter your couple code</div>
-                <div className="onboard-step-sub">Ask {partnerName_.trim()} for the code they generated during their setup.</div>
-                <input className="onboard-name-input" placeholder="e.g. ROSE-4829"
-                  value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())}
-                  onKeyDown={e => { if (e.key === "Enter" && joinCode.trim()) handleJoin(); }}
-                  style={{ textAlign: "center", letterSpacing: "0.12em", fontWeight: 700, fontSize: "1.1rem" }} />
-                {joinError && <div className="join-error">{joinError}</div>}
-                <div className="onboard-note">Your private reflections never leave this device. Only the shared view syncs between you.</div>
-                <button className={`onboard-submit ${joinCode.trim() ? "ready" : ""}`}
-                  onClick={handleJoin} disabled={!joinCode.trim() || joining}>
-                  {joining ? "Connecting…" : "Connect & Open My Workbook →"}
-                </button>
-              </div>
-            )}
-
-            <button className="back-link" onClick={() => setStep(1)}>← Back</button>
-          </>
-        )}
-
-        <div className="onboard-quote">"It is not you vs. me. It is us protecting the structure."</div>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// MAIN APP
-// ════════════════════════════════════════════════════════════════════════════════
-export default function App() {
-  const [identity, setIdentity] = useState(() => loadIdentity());
-  const [screen, setScreen] = useState("home");
-  const [lastPath, setLastPath] = useState(null); // last non-home/gate screen visited
-  // Private data: this person's workbook
-  const [privateData, setPrivateData] = useState(() => loadPrivate());
-  // Shared data: synced between both partners via couple code
-  const [sharedData, setSharedData] = useState({});
-  const [sharedLoading, setSharedLoading] = useState(false);
-
-  // Load shared data on mount and periodically refresh (every 30s)
-  useEffect(() => {
-    if (!identity?.coupleCode) return;
-    const fetch = async () => {
-      setSharedLoading(true);
-      const s = await loadShared(identity.coupleCode);
-      setSharedData(s);
-      setSharedLoading(false);
-    };
-    fetch();
-    const interval = setInterval(fetch, 30000);
-    return () => clearInterval(interval);
-  }, [identity?.coupleCode]);
-
-  // Save private data
-  const savePrivateField = useCallback((updates) => {
-    setPrivateData(prev => {
-      const next = { ...prev, ...updates };
-      savePrivate(next);
-      return next;
-    });
-  }, []);
-
-  // Save shared data (persists + syncs)
-  const saveSharedField = useCallback(async (updates) => {
-    const next = { ...sharedData, ...updates };
-    setSharedData(next);
-    if (identity?.coupleCode) await saveShared(identity.coupleCode, next);
-  }, [sharedData, identity?.coupleCode]);
-
-  const navigate = (dest) => {
-    setScreen(dest);
-    if (!["home", "gate"].includes(dest)) setLastPath(dest);
-    window.scrollTo(0, 0);
-  };
-
-  const handleOnboardComplete = async (id, initPrivate, initShared) => {
-    setIdentity(id);
-    setPrivateData(initPrivate);
-    setSharedData(initShared);
-  };
-
-  // If no identity set, show onboarding
-  if (!identity) {
+  if (sent) {
     return (
-      <>
-        <style>{styles}</style>
-        <OnboardingScreen onComplete={handleOnboardComplete} />
-      </>
+      <div className="screen centered">
+        <Logo size={56} />
+        <div className="eyebrow">Check your inbox</div>
+        <h2>We sent you a link</h2>
+        <p className="lead">We sent a sign-in link to <strong>{email}</strong>. Click it to open your workbook.</p>
+        <p style={{ fontSize: "0.8rem", color: "var(--warm-gray)", marginTop: 24 }}>
+          Didn't get it? Check your spam folder or{" "}
+          <span style={{ color: "var(--plum)", cursor: "pointer", textDecoration: "underline" }}
+            onClick={() => setSent(false)}>try again.</span>
+        </p>
+      </div>
     );
   }
 
-  const myName = identity.myName;
-  const pName = identity.partnerName;
-  const myRole = identity.role;
-  const accentClass = myRole === "p1" ? "p1" : "p2";
-  const coupleCode = identity.coupleCode;
+  return (
+    <div className="screen centered">
+      <Logo size={64} />
+      <div className="eyebrow">Inner Pathways MFT</div>
+      <h1>Rewire the Fight</h1>
+      <p className="lead" style={{ marginBottom: 32 }}>
+        A therapist-designed system for interrupting the patterns that keep you stuck.
+      </p>
+      {error && <div className="msg-error">{error}</div>}
+      <div className="field" style={{ width: "100%", textAlign: "left" }}>
+        <label>Confirmation Code</label>
+        <input
+          value={code}
+          onChange={e => setCode(e.target.value.toUpperCase())}
+          placeholder="e.g. RTF2024"
+          maxLength={12}
+          autoCapitalize="characters"
+        />
+      </div>
+      <div className="field" style={{ width: "100%", textAlign: "left" }}>
+        <label>Your Email</label>
+        <input
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          placeholder="you@email.com"
+          autoComplete="email"
+        />
+      </div>
+      <button className="btn btn-primary" disabled={loading} onClick={handleSubmit}>
+        {loading ? "Sending link..." : "Send My Sign-In Link"}
+      </button>
+      <p style={{ fontSize: "0.75rem", color: "var(--warm-gray)", marginTop: 20, textAlign: "center" }}>
+        We'll email you a secure link — no password needed.
+      </p>
+    </div>
+  );
+}
 
-  // Merge private + shared into a single data object for components that need both
-  // Private fields take precedence for this user's own data
-  const data = { ...sharedData, ...privateData };
+// Onboarding: Name + partner email
+function OnboardingScreen({ user, onComplete }) {
+  const [name, setName] = useState("");
+  const [partnerName, setPartnerName] = useState("");
+  const [partnerEmail, setPartnerEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  // Has user started any path?
-  const hasStarted = !!(lastPath || privateData.act1 || privateData.conflictLog?.length || 
-    privateData[`profile_${myRole}_first_move`] || privateData.learnCompleted);
+  const confirmationCode = user?.user_metadata?.confirmation_code || "DEFAULT";
 
-  // Path completed — unlock Strengthen after any one path has meaningful content
-  const pathCompleted = !!(
-    (privateData.returnTime) || // completed escalation
-    (privateData.dearm_topic || privateData.dearm_describe) || // completed repair
-    (privateData.learnCompleted && Object.keys(privateData.learnCompleted).length > 0) // started learn
+  async function handleSubmit() {
+    if (!name.trim()) { setError("Please enter your name."); return; }
+    setError("");
+    setLoading(true);
+    try {
+      // 1. Find or create couple
+      let coupleId;
+      const { data: existingCouple } = await supabase
+        .from("couples")
+        .select("id")
+        .eq("confirmation_code", confirmationCode)
+        .single();
+
+      if (existingCouple) {
+        coupleId = existingCouple.id;
+      } else {
+        const { data: newCouple, error: coupleErr } = await supabase
+          .from("couples")
+          .insert({ confirmation_code: confirmationCode })
+          .select("id")
+          .single();
+        if (coupleErr) throw coupleErr;
+        coupleId = newCouple.id;
+      }
+
+      // 2. Create partner profile
+      const { error: partnerErr } = await supabase
+        .from("partners")
+        .insert({
+          couple_id: coupleId,
+          user_id: user.id,
+          name: name.trim(),
+          email: user.email,
+          partner_email: partnerEmail.trim().toLowerCase() || null,
+        });
+      if (partnerErr) throw partnerErr;
+
+      // 3. Create empty setup
+      const { data: partnerData } = await supabase
+        .from("partners")
+        .select("id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (partnerData) {
+        await supabase.from("setup").insert({
+          partner_id: partnerData.id,
+          couple_id: coupleId,
+        });
+      }
+
+      onComplete();
+    } catch (e) {
+      setError(e.message || "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="screen">
+      <div style={{ marginBottom: 40 }}>
+        <Logo size={40} />
+      </div>
+      <div className="eyebrow">Welcome</div>
+      <h2>Let's get you set up</h2>
+      <p style={{ marginBottom: 32 }}>
+        This is your private space inside the workbook. Your partner will set up their own.
+      </p>
+      {error && <div className="msg-error">{error}</div>}
+      <div className="field">
+        <label>Your first name</label>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="How should we address you?" />
+      </div>
+      <div className="divider" />
+      <p style={{ fontSize: "0.85rem", color: "var(--warm-gray)", marginBottom: 16 }}>
+        Optional — add your partner's email so they can connect their workbook to yours.
+      </p>
+      <div className="field">
+        <label>Partner's first name</label>
+        <input value={partnerName} onChange={e => setPartnerName(e.target.value)} placeholder="Their name" />
+      </div>
+      <div className="field">
+        <label>Partner's email</label>
+        <input type="email" value={partnerEmail} onChange={e => setPartnerEmail(e.target.value)} placeholder="their@email.com" />
+      </div>
+      <div className="spacer" />
+      <button className="btn btn-primary" disabled={loading} onClick={handleSubmit}>
+        {loading ? "Setting up..." : "Continue"}
+      </button>
+      <button className="btn btn-ghost" onClick={handleSubmit} disabled={loading}>
+        Skip for now — I'll add this later
+      </button>
+    </div>
+  );
+}
+
+// Dashboard — home base
+function DashboardScreen({ partner, setup, activationLogs, glimmers, partnerData, onNavigate }) {
+  const lastActivation = activationLogs?.[0];
+  const recentGlimmers = glimmers?.slice(0, 3) || [];
+  const setupComplete = setup?.replacement_behavior && setup?.triggers?.length > 0;
+
+  return (
+    <div className="screen" style={{ paddingTop: 28 }}>
+      {/* Greeting */}
+      <div className="dashboard-greeting">
+        <div className="time">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+        <h2 style={{ marginBottom: 8 }}>{getTimeGreeting()}, {partner?.name?.split(" ")[0]}.</h2>
+
+        {partnerData ? (
+          <div className="partner-sync-badge">
+            <div className="sync-dot" />
+            Connected with {partnerData.name}
+          </div>
+        ) : (
+          <div className="partner-sync-badge pending">
+            <div className="sync-dot" />
+            Waiting for partner to connect
+          </div>
+        )}
+      </div>
+
+      {/* Setup nudge */}
+      {!setupComplete && (
+        <div className="card card-lavender" style={{ marginBottom: 20 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Finish your setup</div>
+          <p style={{ fontSize: "0.85rem", marginBottom: 12 }}>
+            Your replacement behavior isn't defined yet. You'll want this ready before you need it.
+          </p>
+          <button className="btn btn-plum" style={{ padding: "12px 20px" }} onClick={() => onNavigate("setup")}>
+            Complete My Setup
+          </button>
+        </div>
+      )}
+
+      {/* Tools */}
+      <div className="section-label">Something happened</div>
+      <div className="tools-grid">
+        <button className="tool-btn regulate" onClick={() => onNavigate("regulate")}>
+          <div className="tool-icon">🌿</div>
+          <div className="tool-name">Regulate</div>
+          <div className="tool-desc">I'm activated right now</div>
+        </button>
+        <button className="tool-btn repair" onClick={() => onNavigate("repair")}>
+          <div className="tool-icon">🤝</div>
+          <div className="tool-name">Repair</div>
+          <div className="tool-desc">We just had a fight</div>
+        </button>
+        <button className="tool-btn reflect tool-btn-full" onClick={() => onNavigate("reflect")}>
+          <div className="tool-icon">🔍</div>
+          <div className="tool-name">Reflect</div>
+          <div className="tool-desc">I want to understand what happened</div>
+        </button>
+      </div>
+
+      {/* My last activation */}
+      {lastActivation && (
+        <>
+          <div className="section-label" style={{ marginTop: 8 }}>My last logged state</div>
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div className="activation-indicator" style={{ marginBottom: 8 }}>
+              <div className="activation-bar">
+                <div className="activation-fill" style={{
+                  width: `${lastActivation.level * 10}%`,
+                  background: activationColor(lastActivation.level)
+                }} />
+              </div>
+              <div className="activation-num">{lastActivation.level}</div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.8rem", color: activationColor(lastActivation.level), fontWeight: 500 }}>
+                {activationLabel(lastActivation.level)}
+              </span>
+              <span style={{ fontSize: "0.72rem", color: "var(--warm-gray)" }}>
+                {formatDate(lastActivation.created_at)}
+              </span>
+            </div>
+            {lastActivation.note && (
+              <p style={{ fontSize: "0.82rem", marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
+                "{lastActivation.note}"
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Partner's state */}
+      {partnerData && (
+        <>
+          <div className="section-label">{partnerData.name}'s last logged state</div>
+          <div className="card" style={{ marginBottom: 14 }}>
+            <p style={{ fontSize: "0.82rem", color: "var(--warm-gray)", marginBottom: 0 }}>
+              No recent logs from {partnerData.name} yet.
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* Glimmers */}
+      {recentGlimmers.length > 0 && (
+        <>
+          <div className="section-label">Recent glimmers</div>
+          <div className="card">
+            {recentGlimmers.map(g => (
+              <div className="glimmer-item" key={g.id}>
+                <div className="glimmer-star">✦</div>
+                <div>
+                  <div className="glimmer-text">{g.text}</div>
+                  <div className="glimmer-date">{formatDate(g.created_at)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={() => onNavigate("glimmer")}>
+        + Add a glimmer
+      </button>
+    </div>
+  );
+}
+
+// Setup — 5-step flow
+function SetupScreen({ partner, setup, onComplete, onBack }) {
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [data, setData] = useState({
+    shared_goals: setup?.shared_goals || "",
+    window_low: setup?.window_low || 3,
+    window_high: setup?.window_high || 7,
+    triggers: setup?.triggers || [],
+    body_response: setup?.body_response || "",
+    default_behavior: setup?.default_behavior || "",
+    replacement_behavior: setup?.replacement_behavior || "",
+    cycle_map_my_side: setup?.cycle_map_my_side || "",
+  });
+
+  const STEPS = 5;
+
+  function update(key, val) {
+    setData(d => ({ ...d, [key]: val }));
+  }
+
+  function toggleTrigger(t) {
+    setData(d => ({
+      ...d,
+      triggers: d.triggers.includes(t)
+        ? d.triggers.filter(x => x !== t)
+        : [...d.triggers, t]
+    }));
+  }
+
+  async function saveStep() {
+    setSaving(true);
+    try {
+      await supabase.from("setup").update({
+        ...data,
+        updated_at: new Date().toISOString(),
+      }).eq("partner_id", partner.id);
+    } catch (e) {
+      console.error("Save failed:", e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function nextStep() {
+    await saveStep();
+    if (step < STEPS - 1) setStep(s => s + 1);
+    else {
+      await supabase.from("setup").update({ completed: true }).eq("partner_id", partner.id);
+      onComplete();
+    }
+  }
+
+  const stepContent = [
+    // Step 0: Shared Goals
+    <div key="goals">
+      <div className="eyebrow">Step 1 of 5</div>
+      <h2>What do we want to change?</h2>
+      <p>Take a moment to think about what you're hoping this work gives your relationship. What does success look like for you?</p>
+      <div className="insight">
+        You don't need to be specific. Even "I want us to fight less and feel more connected" is a complete answer.
+      </div>
+      <div className="field">
+        <label>Our shared goal</label>
+        <textarea
+          value={data.shared_goals}
+          onChange={e => update("shared_goals", e.target.value)}
+          placeholder="What I want for us is..."
+          rows={5}
+        />
+      </div>
+    </div>,
+
+    // Step 1: Window of Tolerance
+    <div key="window">
+      <div className="eyebrow">Step 2 of 5</div>
+      <h2>Your window of tolerance</h2>
+      <p>Your window of tolerance is the zone where you can think clearly, communicate, and stay present. Outside of it, your nervous system takes over.</p>
+      <div className="insight">
+        There's no right answer here. This is just about knowing yourself.
+      </div>
+      <div className="field" style={{ marginTop: 24 }}>
+        <label>I start getting activated around...</label>
+        <div className="slider-wrap">
+          <div className="slider-value">{data.window_low}/10</div>
+          <input type="range" min="1" max="9" value={data.window_low}
+            onChange={e => update("window_low", parseInt(e.target.value))} />
+          <div className="slider-labels">
+            <span>Calm (1)</span><span>Flooded (10)</span>
+          </div>
+        </div>
+      </div>
+      <div className="field">
+        <label>I'm clearly outside my window above...</label>
+        <div className="slider-wrap">
+          <div className="slider-value">{data.window_high}/10</div>
+          <input type="range" min={data.window_low + 1} max="10" value={data.window_high}
+            onChange={e => update("window_high", parseInt(e.target.value))} />
+          <div className="slider-labels">
+            <span>Calm (1)</span><span>Flooded (10)</span>
+          </div>
+        </div>
+      </div>
+      <div className="card card-sage">
+        <p style={{ margin: 0, fontSize: "0.85rem" }}>
+          Your window: <strong>{data.window_low} – {data.window_high}</strong>. Below {data.window_low}, you're regulated. Above {data.window_high}, meaningful conversation isn't possible yet.
+        </p>
+      </div>
+    </div>,
+
+    // Step 2: Triggers + Body
+    <div key="triggers">
+      <div className="eyebrow">Step 3 of 5</div>
+      <h2>What activates you?</h2>
+      <p>When conflict starts, certain things reliably pull you outside your window. Naming them now means you can recognize them in the moment.</p>
+      <div className="field">
+        <label>My triggers (select all that apply)</label>
+        <div className="pills">
+          {TRIGGER_OPTIONS.map(t => (
+            <button key={t} className={`pill ${data.triggers.includes(t) ? "active" : ""}`}
+              onClick={() => toggleTrigger(t)}>{t}</button>
+          ))}
+        </div>
+      </div>
+      <div className="field" style={{ marginTop: 8 }}>
+        <label>What my body does first</label>
+        <select value={data.body_response} onChange={e => update("body_response", e.target.value)}>
+          <option value="">Choose one...</option>
+          {BODY_RESPONSES.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+      <div className="insight">
+        Your body gives you the signal before your mind does. That physical cue is your earliest intervention point.
+      </div>
+    </div>,
+
+    // Step 3: Replacement Behavior
+    <div key="replacement">
+      <div className="eyebrow">Step 4 of 5</div>
+      <h2>Your replacement behavior</h2>
+      <p>This is the most important part. When you're activated, your default behavior kicks in automatically — and it usually makes things worse. You're going to choose something different to do instead.</p>
+      <div className="insight">
+        "Instead of [what I normally do], I will [what I'm choosing to do]."
+      </div>
+      <div className="field" style={{ marginTop: 20 }}>
+        <label>Instead of...</label>
+        <select value={data.default_behavior} onChange={e => update("default_behavior", e.target.value)}>
+          <option value="">What do you usually do when activated?</option>
+          {DEFAULT_BEHAVIORS.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>I will say or do...</label>
+        <textarea
+          value={data.replacement_behavior}
+          onChange={e => update("replacement_behavior", e.target.value)}
+          placeholder={`e.g. "I'm starting to feel overwhelmed. Can we take 20 minutes and come back to this?"`}
+          rows={4}
+        />
+      </div>
+      {data.default_behavior && data.replacement_behavior && (
+        <div className="replacement-card">
+          <div className="instead-of">Instead of</div>
+          <div className="old-behavior">{data.default_behavior}</div>
+          <div className="i-will">I will</div>
+          <div className="new-behavior">"{data.replacement_behavior}"</div>
+        </div>
+      )}
+    </div>,
+
+    // Step 4: Cycle Map
+    <div key="cycle">
+      <div className="eyebrow">Step 5 of 5</div>
+      <h2>Your side of the cycle</h2>
+      <p>Every couple has a conflict cycle — a loop that both partners are caught in. Understanding your side of it is how you start to interrupt it.</p>
+      <div className="insight">
+        The cycle is never: "My partner is the problem." It's always: "We're both caught in a pattern."
+      </div>
+      <div className="field" style={{ marginTop: 20 }}>
+        <label>When I feel threatened or disconnected, I tend to...</label>
+        <textarea
+          value={data.cycle_map_my_side}
+          onChange={e => update("cycle_map_my_side", e.target.value)}
+          placeholder="Describe what happens on your end — what you feel, what you do, and what you're afraid of underneath it..."
+          rows={6}
+        />
+      </div>
+      <p style={{ fontSize: "0.82rem", color: "var(--warm-gray)" }}>
+        Your partner is completing their own version of this separately. Together, your two sides form the shared cycle.
+      </p>
+    </div>,
+  ];
+
+  return (
+    <div className="screen">
+      <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <span style={{ fontSize: "0.75rem", color: "var(--warm-gray)" }}>My Setup</span>
+      </div>
+
+      <div className="setup-step-indicator">
+        {Array.from({ length: STEPS }).map((_, i) => (
+          <div key={i} className={`step-dot ${i < step ? "done" : i === step ? "active" : ""}`} />
+        ))}
+      </div>
+
+      {stepContent[step]}
+
+      <div className="spacer" style={{ minHeight: 32 }} />
+
+      <button className="btn btn-primary" disabled={saving} onClick={nextStep}>
+        {saving ? "Saving..." : step < STEPS - 1 ? "Save & Continue" : "Complete My Setup"}
+      </button>
+      {step > 0 && (
+        <button className="btn btn-ghost" onClick={() => setStep(s => s - 1)}>
+          Back
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Regulate — solo regulation tool
+function RegulateScreen({ partner, setup, onBack, onLog }) {
+  const [phase, setPhase] = useState("check"); // check | tool-select | breathing | sigh | grounding | replacement | log
+  const [activation, setActivation] = useState(5);
+  const [tool, setTool] = useState(null);
+  const [breathPhase, setBreathPhase] = useState("inhale");
+  const [breathCount, setBreathCount] = useState(4);
+  const [breathCycle, setBreathCycle] = useState(0);
+  const [groundingStep, setGroundingStep] = useState(0);
+  const [note, setNote] = useState("");
+  const timerRef = useRef(null);
+
+  const GROUNDING_STEPS = [
+    { count: 5, sense: "See", prompt: "Look around. Name 5 things you can see right now." },
+    { count: 4, sense: "Touch", prompt: "Name 4 things you can physically feel — your feet on the floor, the air, your clothes." },
+    { count: 3, sense: "Hear", prompt: "What 3 sounds can you hear? Don't judge them, just notice." },
+    { count: 2, sense: "Smell", prompt: "Name 2 things you can smell — or notice the absence of smell." },
+    { count: 1, sense: "Taste", prompt: "What's 1 thing you can taste right now?" },
+  ];
+
+  function startBreathing(type) {
+    setTool(type);
+    setBreathPhase("inhale");
+    setBreathCount(4);
+    setBreathCycle(0);
+    setPhase(type);
+  }
+
+  useEffect(() => {
+    if (phase === "breathing") {
+      runBoxBreath();
+    } else if (phase === "sigh") {
+      runSigh();
+    }
+    return () => clearTimeout(timerRef.current);
+  }, [phase]);
+
+  function runBoxBreath() {
+    const sequence = [
+      { phase: "inhale", label: "Breathe in", count: 4, duration: 4000 },
+      { phase: "hold", label: "Hold", count: 4, duration: 4000 },
+      { phase: "exhale", label: "Breathe out", count: 4, duration: 4000 },
+      { phase: "hold", label: "Hold", count: 4, duration: 4000 },
+    ];
+    let i = 0;
+    let cycles = 0;
+    function tick() {
+      setBreathPhase(sequence[i].phase);
+      setBreathCount(sequence[i].count);
+      let c = sequence[i].count;
+      const countdown = setInterval(() => {
+        c--;
+        setBreathCount(c);
+        if (c <= 0) clearInterval(countdown);
+      }, 1000);
+      timerRef.current = setTimeout(() => {
+        i = (i + 1) % sequence.length;
+        if (i === 0) {
+          cycles++;
+          setBreathCycle(cycles);
+          if (cycles >= 4) { setPhase("replacement"); return; }
+        }
+        tick();
+      }, sequence[i].duration);
+    }
+    tick();
+  }
+
+  function runSigh() {
+    const sequence = [
+      { phase: "inhale", label: "First inhale", count: 2 },
+      { phase: "inhale", label: "Second inhale", count: 1 },
+      { phase: "exhale", label: "Long exhale", count: 6 },
+    ];
+    let i = 0;
+    function tick() {
+      setBreathPhase(sequence[i].phase);
+      setBreathCount(sequence[i].count);
+      let c = sequence[i].count;
+      const countdown = setInterval(() => {
+        c--;
+        setBreathCount(c);
+        if (c <= 0) clearInterval(countdown);
+      }, 1000);
+      timerRef.current = setTimeout(() => {
+        i++;
+        if (i >= sequence.length) {
+          i = 0;
+          setBreathCycle(prev => {
+            const next = prev + 1;
+            if (next >= 5) { setPhase("replacement"); return next; }
+            return next;
+          });
+        }
+        tick();
+      }, sequence[i].count * 1000 + 200);
+    }
+    tick();
+  }
+
+  async function logAndReturn() {
+    try {
+      await supabase.from("activation_logs").insert({
+        partner_id: partner.id,
+        couple_id: partner.couple_id,
+        level: activation,
+        regulation_tool: tool,
+        note: note.trim() || null,
+      });
+    } catch (e) { console.error(e); }
+    onLog();
+  }
+
+  // Screens
+  if (phase === "check") return (
+    <div className="screen">
+      <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+        <button className="back-btn" onClick={onBack}>← Back</button>
+      </div>
+      <div className="eyebrow">Regulate</div>
+      <h2>Where are you right now?</h2>
+      <p>Check in with your nervous system. There's no right answer — just honest.</p>
+      <div className="field" style={{ marginTop: 24 }}>
+        <label>My activation level</label>
+        <div className="slider-wrap">
+          <div className="slider-value" style={{ color: activationColor(activation) }}>{activation}</div>
+          <input type="range" min="1" max="10" value={activation}
+            onChange={e => setActivation(parseInt(e.target.value))} />
+          <div className="slider-labels"><span>Calm (1)</span><span>Flooded (10)</span></div>
+        </div>
+        <div style={{ textAlign: "center", marginTop: 8 }}>
+          <span style={{ fontSize: "0.85rem", color: activationColor(activation), fontWeight: 500 }}>
+            {activationLabel(activation)}
+          </span>
+        </div>
+      </div>
+      <div className="insight">
+        {activation <= 4 && "You're in your window. You can think clearly right now."}
+        {activation > 4 && activation <= 7 && "You're activated. Your nervous system is working hard. Let's help it slow down."}
+        {activation > 7 && "You're flooded. Your thinking brain is offline right now. That's not a flaw — it's biology. Let's regulate first."}
+      </div>
+      <div className="spacer" />
+      <button className="btn btn-primary" onClick={() => setPhase("tool-select")}>
+        Choose a regulation tool
+      </button>
+    </div>
   );
 
-  // Learn path progress
-  const learnCompleted = privateData.learnCompleted || {};
-  const learnCount = Object.keys(learnCompleted).length;
-  const LEARN_TOTAL = 6;
+  if (phase === "tool-select") return (
+    <div className="screen">
+      <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+        <button className="back-btn" onClick={() => setPhase("check")}>← Back</button>
+      </div>
+      <div className="eyebrow">Choose a tool</div>
+      <h2>How do you want to regulate?</h2>
+      <p>All three of these work. Pick the one that feels right for right now.</p>
+      <div style={{ marginTop: 24 }}>
+        <button className="card" style={{ width: "100%", textAlign: "left", cursor: "pointer", border: "1px solid var(--steel)" }}
+          onClick={() => startBreathing("breathing")}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h3 style={{ marginBottom: 4 }}>Box Breathing</h3>
+              <p style={{ margin: 0, fontSize: "0.82rem" }}>Inhale 4 · Hold 4 · Exhale 4 · Hold 4. Four cycles.</p>
+            </div>
+            <span style={{ fontSize: "1.4rem" }}>⬜</span>
+          </div>
+        </button>
+        <button className="card" style={{ width: "100%", textAlign: "left", cursor: "pointer", border: "1px solid var(--steel)" }}
+          onClick={() => startBreathing("sigh")}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h3 style={{ marginBottom: 4 }}>Physiological Sigh</h3>
+              <p style={{ margin: 0, fontSize: "0.82rem" }}>Double inhale + long exhale. Fastest way to calm your nervous system.</p>
+            </div>
+            <span style={{ fontSize: "1.4rem" }}>💨</span>
+          </div>
+        </button>
+        <button className="card" style={{ width: "100%", textAlign: "left", cursor: "pointer", border: "1px solid var(--steel)" }}
+          onClick={() => { setTool("grounding"); setPhase("grounding"); }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h3 style={{ marginBottom: 4 }}>5-4-3-2-1 Grounding</h3>
+              <p style={{ margin: 0, fontSize: "0.82rem" }}>Use your senses to come back to the present moment.</p>
+            </div>
+            <span style={{ fontSize: "1.4rem" }}>🌿</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
 
-  const goalsSet = !!(sharedData.goals_change || sharedData.goals_success);
+  if (phase === "breathing" || phase === "sigh") return (
+    <div className="screen centered" style={{ padding: "48px 28px" }}>
+      <div className="eyebrow">{phase === "breathing" ? "Box Breathing" : "Physiological Sigh"}</div>
+      <div className="breathing-container">
+        <div className={`breathing-circle ${breathPhase}`}>
+          <div style={{ textAlign: "center" }}>
+            <div className="breathing-count">{breathCount}</div>
+            <div className="breathing-phase">
+              {breathPhase === "inhale" ? "Breathe in" : breathPhase === "hold" ? "Hold" : "Breathe out"}
+            </div>
+          </div>
+        </div>
+        <div className="breathing-instruction">
+          {breathPhase === "inhale" && "Slow breath in through your nose..."}
+          {breathPhase === "hold" && "Hold gently..."}
+          {breathPhase === "exhale" && "Slow breath out through your mouth..."}
+        </div>
+        {breathCycle > 0 && (
+          <div style={{ fontSize: "0.75rem", color: "var(--warm-gray)" }}>
+            Cycle {breathCycle} of {phase === "breathing" ? 4 : 5}
+          </div>
+        )}
+      </div>
+      <button className="btn btn-ghost" onClick={() => setPhase("replacement")}>
+        Skip to next step
+      </button>
+    </div>
+  );
 
-  // Mode-based class for state visual environments
-  const modeClass = screen === "escalate" ? "mode-escalate"
-    : screen === "repair" ? "mode-repair"
-    : screen === "learn" ? "mode-learn"
-    : "";
+  if (phase === "grounding") {
+    const step = GROUNDING_STEPS[groundingStep] || GROUNDING_STEPS[GROUNDING_STEPS.length - 1];
+    return (
+      <div className="screen centered" style={{ padding: "48px 28px" }}>
+        <div className="eyebrow">5-4-3-2-1 Grounding</div>
+        <div className="breathing-container">
+          <div className="grounding-count-display">{step.count}</div>
+          <div className="grounding-sense">{step.sense}</div>
+          <div className="grounding-prompt">{step.prompt}</div>
+        </div>
+        {groundingStep < GROUNDING_STEPS.length - 1 ? (
+          <button className="btn btn-primary" onClick={() => setGroundingStep(s => s + 1)}>
+            Done — next sense
+          </button>
+        ) : (
+          <button className="btn btn-primary" onClick={() => setPhase("replacement")}>
+            I'm grounded — continue
+          </button>
+        )}
+        <button className="btn btn-ghost" onClick={() => setPhase("replacement")}>Skip</button>
+      </div>
+    );
+  }
+
+  if (phase === "replacement") {
+    const hasReplacement = setup?.replacement_behavior && setup?.default_behavior;
+    return (
+      <div className="screen" style={{ paddingTop: 48 }}>
+        <div className="eyebrow">Your plan for this moment</div>
+        <h2>You've regulated.<br />Now what?</h2>
+        {hasReplacement ? (
+          <>
+            <p>You set this intention for yourself during setup. Here it is.</p>
+            <div className="replacement-card" style={{ marginTop: 24, marginBottom: 32 }}>
+              <div className="instead-of">Instead of</div>
+              <div className="old-behavior">{setup.default_behavior}</div>
+              <div className="i-will">I will</div>
+              <div className="new-behavior">"{setup.replacement_behavior}"</div>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--warm-gray)", textAlign: "center" }}>
+              This was your choice when you were calm. It still is.
+            </p>
+          </>
+        ) : (
+          <div className="card card-lavender" style={{ marginTop: 24 }}>
+            <h3>No replacement behavior set yet</h3>
+            <p style={{ fontSize: "0.85rem" }}>You haven't defined your replacement behavior in Setup yet. That's the missing piece — add it when you're calm.</p>
+          </div>
+        )}
+        <div className="spacer" />
+        <button className="btn btn-primary" onClick={() => setPhase("log")}>
+          Log this moment
+        </button>
+        <button className="btn btn-ghost" onClick={onBack}>
+          Return to dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === "log") return (
+    <div className="screen">
+      <div className="eyebrow">Log it</div>
+      <h2>One more thing</h2>
+      <p>Optional — add a note about what was happening. Your future self (and your therapist) will thank you.</p>
+      <div className="field" style={{ marginTop: 20 }}>
+        <label>What was the context? (optional)</label>
+        <textarea value={note} onChange={e => setNote(e.target.value)}
+          placeholder="What triggered you? What did you notice? What helped?"
+          rows={5} />
+      </div>
+      <div className="spacer" />
+      <button className="btn btn-primary" onClick={logAndReturn}>
+        Save and return home
+      </button>
+    </div>
+  );
+
+  return null;
+}
+
+// Repair screen
+function RepairScreen({ partner, setup, onBack, onLog }) {
+  const [phase, setPhase] = useState("check"); // check | scripts | dear | log
+  const [activation, setActivation] = useState(5);
+  const [scriptPhase, setScriptPhase] = useState("opening");
+  const [selectedScripts, setSelectedScripts] = useState([]);
+  const [conflictNote, setConflictNote] = useState("");
+  const [missedMoment, setMissedMoment] = useState("");
+
+  const SCRIPT_PHASES = ["opening", "accountability", "softening", "request"];
+  const SCRIPT_LABELS = {
+    opening: "Start the conversation",
+    accountability: "Take responsibility",
+    softening: "Share the softer emotion",
+    request: "Make a request",
+  };
+
+  function toggleScript(text) {
+    setSelectedScripts(prev =>
+      prev.includes(text) ? prev.filter(s => s !== text) : [...prev, text]
+    );
+  }
+
+  async function logRepair() {
+    try {
+      await supabase.from("conflict_logs").insert({
+        couple_id: partner.couple_id,
+        initiated_by: partner.id,
+        what_happened: conflictNote.trim() || null,
+        missed_moment: missedMoment.trim() || null,
+        repair_completed: true,
+      });
+    } catch (e) { console.error(e); }
+    onLog();
+  }
+
+  if (phase === "check") return (
+    <div className="screen">
+      <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+        <button className="back-btn" onClick={onBack}>← Back</button>
+      </div>
+      <div className="eyebrow">Repair</div>
+      <h2>Before we start —<br />where are you?</h2>
+      <p>Repair only works when both partners are below a 5. If either of you is still flooded, regulate first.</p>
+      <div className="field" style={{ marginTop: 24 }}>
+        <label>My activation right now</label>
+        <div className="slider-wrap">
+          <div className="slider-value" style={{ color: activationColor(activation) }}>{activation}</div>
+          <input type="range" min="1" max="10" value={activation}
+            onChange={e => setActivation(parseInt(e.target.value))} />
+          <div className="slider-labels"><span>Calm (1)</span><span>Flooded (10)</span></div>
+        </div>
+      </div>
+      {activation > 5 ? (
+        <>
+          <div className="card card-blush">
+            <h3 style={{ marginBottom: 6 }}>You're still activated</h3>
+            <p style={{ fontSize: "0.85rem", margin: 0 }}>
+              At {activation}/10, meaningful repair is hard. Your nervous system is still protective.
+              Try regulating first, then come back here.
+            </p>
+          </div>
+          <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={onBack}>
+            Regulate first
+          </button>
+          <button className="btn btn-ghost" onClick={() => setPhase("scripts")}>
+            I want to try anyway
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="card card-sage">
+            <p style={{ fontSize: "0.85rem", margin: 0 }}>
+              Good. At {activation}/10, you're in a place where real conversation is possible.
+            </p>
+          </div>
+          <div className="spacer" />
+          <button className="btn btn-primary" onClick={() => setPhase("scripts")}>
+            Start the repair process
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  if (phase === "scripts") {
+    const phaseIdx = SCRIPT_PHASES.indexOf(scriptPhase);
+    return (
+      <div className="screen">
+        <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+          <button className="back-btn" onClick={() => phaseIdx === 0 ? setPhase("check") : setScriptPhase(SCRIPT_PHASES[phaseIdx - 1])}>← Back</button>
+          <span style={{ fontSize: "0.75rem", color: "var(--warm-gray)" }}>
+            {phaseIdx + 1} of {SCRIPT_PHASES.length}
+          </span>
+        </div>
+        <div className="setup-step-indicator">
+          {SCRIPT_PHASES.map((p, i) => (
+            <div key={p} className={`step-dot ${i < phaseIdx ? "done" : i === phaseIdx ? "active" : ""}`} />
+          ))}
+        </div>
+        <div className="eyebrow">{SCRIPT_LABELS[scriptPhase]}</div>
+        <h2 style={{ marginBottom: 20 }}>Choose a phrase that feels true</h2>
+        <p style={{ marginBottom: 20 }}>You don't have to find perfect words. These are starting points. Use the one that feels closest.</p>
+        {REPAIR_SCRIPTS[scriptPhase].map(s => (
+          <div key={s.text}
+            className={`script-card ${selectedScripts.includes(s.text) ? "selected" : ""}`}
+            onClick={() => toggleScript(s.text)}>
+            <div className="script-text">"{s.text}"</div>
+            <div className="script-context">{s.context}</div>
+          </div>
+        ))}
+        <div className="spacer" />
+        {phaseIdx < SCRIPT_PHASES.length - 1 ? (
+          <button className="btn btn-primary" onClick={() => setScriptPhase(SCRIPT_PHASES[phaseIdx + 1])}>
+            Continue
+          </button>
+        ) : (
+          <button className="btn btn-primary" onClick={() => setPhase("log")}>
+            Log this repair
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (phase === "log") return (
+    <div className="screen">
+      <div className="eyebrow">Log the conflict</div>
+      <h2>What happened?</h2>
+      <p>This is for you and your therapist. The more honest, the more useful.</p>
+      <div className="field" style={{ marginTop: 16 }}>
+        <label>What was the conflict about?</label>
+        <textarea value={conflictNote} onChange={e => setConflictNote(e.target.value)}
+          placeholder="What triggered it? What happened? How did it end?"
+          rows={4} />
+      </div>
+      <div className="field">
+        <label>Where was the missed intervention moment?</label>
+        <textarea value={missedMoment} onChange={e => setMissedMoment(e.target.value)}
+          placeholder="When could you have caught it earlier? What did you notice in your body?"
+          rows={4} />
+      </div>
+      <div className="spacer" />
+      <button className="btn btn-primary" onClick={logRepair}>
+        Save and return home
+      </button>
+    </div>
+  );
+
+  return null;
+}
+
+// Reflect screen
+function ReflectScreen({ partner, setup, onBack, onSave }) {
+  const [reflection, setReflection] = useState("");
+  const [missedMoment, setMissedMoment] = useState("");
+  const [cycleUpdate, setCycleUpdate] = useState(setup?.cycle_map_my_side || "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await supabase.from("conflict_logs").insert({
+        couple_id: partner.couple_id,
+        initiated_by: partner.id,
+        what_happened: reflection.trim() || null,
+        missed_moment: missedMoment.trim() || null,
+        repair_completed: false,
+      });
+      if (cycleUpdate !== setup?.cycle_map_my_side) {
+        await supabase.from("setup").update({
+          cycle_map_my_side: cycleUpdate,
+          updated_at: new Date().toISOString()
+        }).eq("partner_id", partner.id);
+      }
+      onSave();
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="screen">
+      <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+        <button className="back-btn" onClick={onBack}>← Back</button>
+      </div>
+      <div className="eyebrow">Reflect</div>
+      <h2>What happened, and what did you learn?</h2>
+      <p>This is calm-moment work. You're not in the fight anymore — you're looking at it from the outside.</p>
+      <div className="insight">
+        "The goal isn't to figure out who was right. It's to find where the pattern started."
+      </div>
+      <div className="field" style={{ marginTop: 20 }}>
+        <label>What happened?</label>
+        <textarea value={reflection} onChange={e => setReflection(e.target.value)}
+          placeholder="Describe the conflict as honestly as you can..."
+          rows={4} />
+      </div>
+      <div className="field">
+        <label>Where was the earliest intervention point?</label>
+        <textarea value={missedMoment} onChange={e => setMissedMoment(e.target.value)}
+          placeholder="When did your body first signal you were getting activated? What happened right before?"
+          rows={3} />
+      </div>
+      <div className="field">
+        <label>Update your cycle map (optional)</label>
+        <textarea value={cycleUpdate} onChange={e => setCycleUpdate(e.target.value)}
+          placeholder="Has your understanding of your side of the pattern changed?"
+          rows={4} />
+      </div>
+      <div className="spacer" />
+      <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
+        {saving ? "Saving..." : "Save reflection"}
+      </button>
+    </div>
+  );
+}
+
+// Goals screen
+function GoalsScreen({ partner, setup, onBack, onSave }) {
+  const [goals, setGoals] = useState(setup?.shared_goals || "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await supabase.from("setup").update({
+        shared_goals: goals,
+        updated_at: new Date().toISOString()
+      }).eq("partner_id", partner.id);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="screen">
+      <div className="eyebrow">Our Goals</div>
+      <h2>What you're working toward</h2>
+      <p>This is the anchor. When things feel hard, this is why you're doing the work.</p>
+      {saved && <div className="msg-success">Goals saved.</div>}
+      <div className="field" style={{ marginTop: 20 }}>
+        <label>Our shared goal</label>
+        <textarea value={goals} onChange={e => setGoals(e.target.value)}
+          placeholder="What we want for our relationship is..."
+          rows={6} />
+      </div>
+      <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
+        {saving ? "Saving..." : "Save"}
+      </button>
+      <div className="divider" />
+      <h3>Add a glimmer</h3>
+      <p style={{ fontSize: "0.85rem" }}>A glimmer is a small moment of connection or safety. Noticing them trains your nervous system to see more of them.</p>
+      <GlimmerAdd partner={partner} />
+    </div>
+  );
+}
+
+function GlimmerAdd({ partner }) {
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function addGlimmer() {
+    if (!text.trim()) return;
+    setSaving(true);
+    try {
+      await supabase.from("glimmers").insert({
+        partner_id: partner.id,
+        couple_id: partner.couple_id,
+        text: text.trim(),
+      });
+      setText("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  }
 
   return (
     <>
-      <style>{styles}</style>
-      <div className={`app${modeClass ? " " + modeClass : ""}`}>
-        {screen !== "escalate" && (
-          <nav className="nav">
-            <div className="nav-brand" onClick={() => navigate("home")}>
-              <Logo />
-              <div>
-                <div className="nav-title">Rewire the Fight</div>
-                <div className="nav-subtitle">Eva K. Fernandez, LMFT</div>
-              </div>
-            </div>
-            <div className="nav-right">
-              <div className="nav-tabs">
-                <button className={`nav-tab-btn ${screen === "home" || screen === "gate" ? "active" : ""}`} onClick={() => navigate("home")}>Home</button>
-                {hasStarted && (
-                  <button className={`nav-tab-btn ${["escalate","repair","learn"].includes(screen) ? "active" : ""}`} onClick={() => navigate(lastPath || "gate")}>Continue</button>
-                )}
-                <button
-                  className={`nav-tab-btn ${screen === "strengthen" ? "active" : ""} ${!pathCompleted ? "locked" : ""}`}
-                  onClick={() => pathCompleted ? navigate("strengthen") : null}
-                  title={!pathCompleted ? "Complete a path to unlock Strengthen" : ""}
-                >
-                  {pathCompleted ? "Strengthen" : "🔒 Strengthen"}
-                </button>
-              </div>
-              <span className={`partner-badge ${accentClass}`}>{myName}</span>
-            </div>
-          </nav>
-        )}
-
-        <main className="main">
-          {screen === "home" && (
-            <div className="home-hero fade-in">
-              <div className="home-hero-eyebrow">Eva K. Fernandez, LMFT · Inner Pathways MFT</div>
-              <h1 className="home-hero-heading">Stop the fight.<br /><em>Repair the damage.</em><br />Prevent the next one.</h1>
-              <p className="home-hero-sub">A therapist-designed escalation interruption system. Built for the moment you need it most.</p>
-              <button className="btn-start-here" onClick={() => navigate("gate")}>Start Here</button>
-              {hasStarted && (
-                <button className="btn-continue-quiet" onClick={() => navigate(lastPath || "gate")}>
-                  Already started? Continue →
-                </button>
-              )}
-              <hr className="entry-divider" style={{ maxWidth: 520, margin: "48px auto 24px" }} />
-              <div className="entry-footer">"It is not you vs. me. It is us protecting the structure."</div>
-              <div style={{ marginTop: 28, display: "flex", justifyContent: "center", gap: 16 }}>
-                <button className="goals-quiet-link" onClick={() => navigate("goals")}>
-                  {goalsSet ? "↺ Revisit Your Why" : "Set your goals →"}
-                </button>
-                <span className="home-footer-divider">·</span>
-                <span className="home-footer-code">{coupleCode}</span>
-              </div>
-            </div>
-          )}
-
-          {screen === "gate" && (
-            <div className="gate-screen fade-in">
-              <div className="gate-eyebrow">Where are you right now?</div>
-              <div className="path-cards" style={{ maxWidth: 560, margin: "0 auto" }}>
-                <button className="path-card escalate" onClick={() => navigate("escalate")}>
-                  <div className="path-card-text">
-                    <div className="path-card-title">🔥 We're escalating right now</div>
-                    <div className="path-card-desc">Stop the cycle before it causes damage. Body-first. One step at a time.</div>
-                  </div>
-                  <span className="path-card-arrow">→</span>
-                </button>
-                <button className="path-card repair" onClick={() => navigate("repair")}>
-                  <div className="path-card-text">
-                    <div className="path-card-title">🔧 We just had a fight</div>
-                    <div className="path-card-desc">Repair the rupture and find your way back to each other.</div>
-                  </div>
-                  <span className="path-card-arrow">→</span>
-                </button>
-                <button className="path-card learn" onClick={() => navigate("learn")}>
-                  <div className="path-card-text">
-                    <div className="path-card-title">🧠 We're calm — I want to understand us</div>
-                    <div className="path-card-desc">Map the pattern. Understand the cycle underneath. Break it.</div>
-                  </div>
-                  <span className="path-card-arrow">→</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {screen === "goals" && <GoalsPath sharedData={sharedData} onSaveShared={saveSharedField} identity={identity} onNavigate={navigate} />}
-          {screen === "escalate" && <EscalatePath data={data} onSave={savePrivateField} onNavigate={navigate} />}
-          {screen === "repair" && <RepairPath data={data} onSave={savePrivateField} onNavigate={navigate} />}
-          {screen === "learn" && <LearnPath data={data} onSave={savePrivateField} onSaveShared={saveSharedField} sharedData={sharedData} onNavigate={navigate} identity={identity} />}
-          {screen === "strengthen" && <StrengthenPath data={data} onSave={savePrivateField} identity={identity} />}
-          {screen === "agreement" && <AgreementPath data={data} sharedData={sharedData} onSaveShared={saveSharedField} onNavigate={navigate} />}
-        </main>
-
-        {screen !== "escalate" && (
-          <footer className="footer">
-            <span>Inner Pathways MFT, PLLC · Rewire the Fight™</span>
-            <span style={{ margin: "0 8px" }}>·</span>
-            <button className="goals-quiet-link" onClick={() => navigate("goals")} style={{ display: "inline" }}>
-              {goalsSet ? "↺ Revisit Your Why" : "Set your goals →"}
-            </button>
-          </footer>
-        )}
+      {saved && <div className="msg-success">Glimmer added ✦</div>}
+      <div className="field">
+        <label>What happened?</label>
+        <textarea value={text} onChange={e => setText(e.target.value)}
+          placeholder="We laughed together today. They reached for my hand. I felt safe."
+          rows={3} />
       </div>
+      <button className="btn btn-secondary" disabled={saving || !text.trim()} onClick={addGlimmer}>
+        {saving ? "Saving..." : "Add glimmer ✦"}
+      </button>
     </>
+  );
+}
+
+// ─── MAIN APP ──────────────────────────────────────────────────────────────────
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [screen, setScreen] = useState("dashboard"); // dashboard | setup | regulate | repair | reflect | goals | glimmer
+  const [partner, setPartner] = useState(null);
+  const [setup, setSetup] = useState(null);
+  const [activationLogs, setActivationLogs] = useState([]);
+  const [glimmers, setGlimmers] = useState([]);
+  const [partnerData, setPartnerData] = useState(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  // Inject styles
+  useEffect(() => {
+    const styleEl = document.createElement("style");
+    styleEl.textContent = FONTS + css;
+    document.head.appendChild(styleEl);
+    document.title = "Rewire the Fight";
+    return () => document.head.removeChild(styleEl);
+  }, []);
+
+  // Auth listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) loadUserData(session.user);
+      else setLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) loadUserData(session.user);
+      else { setLoading(false); setPartner(null); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function loadUserData(user) {
+    setLoading(true);
+    try {
+      // Load partner profile
+      const { data: partnerRow } = await supabase
+        .from("partners")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!partnerRow) {
+        setNeedsOnboarding(true);
+        setLoading(false);
+        return;
+      }
+
+      setPartner(partnerRow);
+
+      // Load setup
+      const { data: setupRow } = await supabase
+        .from("setup")
+        .select("*")
+        .eq("partner_id", partnerRow.id)
+        .single();
+      setSetup(setupRow);
+
+      // Load activation logs
+      const { data: logs } = await supabase
+        .from("activation_logs")
+        .select("*")
+        .eq("partner_id", partnerRow.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setActivationLogs(logs || []);
+
+      // Load glimmers
+      const { data: glimmerRows } = await supabase
+        .from("glimmers")
+        .select("*")
+        .eq("partner_id", partnerRow.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setGlimmers(glimmerRows || []);
+
+      // Try to find partner (by email match)
+      if (partnerRow.partner_email) {
+        const { data: otherPartner } = await supabase
+          .from("partners")
+          .select("*")
+          .eq("email", partnerRow.partner_email)
+          .eq("couple_id", partnerRow.couple_id)
+          .single();
+        if (otherPartner) setPartnerData(otherPartner);
+      }
+
+      // Realtime: listen for partner activation logs
+      if (partnerRow.couple_id) {
+        const channel = supabase
+          .channel("couple-updates")
+          .on("postgres_changes", {
+            event: "INSERT",
+            schema: "public",
+            table: "activation_logs",
+            filter: `couple_id=eq.${partnerRow.couple_id}`
+          }, () => loadUserData(user))
+          .subscribe();
+        return () => supabase.removeChannel(channel);
+      }
+
+    } catch (e) {
+      console.error("Load error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function refreshData() {
+    if (session?.user) loadUserData(session.user);
+    setScreen("dashboard");
+  }
+
+  if (loading) return (
+    <div className="app">
+      <div className="loading-screen">
+        <Logo size={48} />
+        <div className="spinner" />
+      </div>
+    </div>
+  );
+
+  if (!session) return (
+    <div className="app">
+      <GateScreen onSuccess={() => {}} />
+    </div>
+  );
+
+  if (needsOnboarding) return (
+    <div className="app">
+      <OnboardingScreen
+        user={session.user}
+        onComplete={() => { setNeedsOnboarding(false); loadUserData(session.user); }}
+      />
+    </div>
+  );
+
+  if (!partner) return (
+    <div className="app">
+      <div className="loading-screen">
+        <Logo size={48} />
+        <div className="spinner" />
+      </div>
+    </div>
+  );
+
+  const NAV_ITEMS = [
+    { id: "dashboard", icon: "⌂", label: "Home" },
+    { id: "setup", icon: "◎", label: "My Setup" },
+    { id: "tools", icon: "✦", label: "Tools" },
+    { id: "goals", icon: "◇", label: "Goals" },
+  ];
+
+  // Tools is a sub-navigation — clicking it goes to the tools entry in dashboard
+  function handleNavClick(id) {
+    if (id === "tools") {
+      setScreen("dashboard");
+      setTimeout(() => {
+        document.querySelector(".tools-grid")?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    } else {
+      setScreen(id);
+    }
+  }
+
+  const activeNav = ["regulate", "repair", "reflect"].includes(screen)
+    ? "tools"
+    : screen === "setup" ? "setup"
+    : screen === "goals" || screen === "glimmer" ? "goals"
+    : "dashboard";
+
+  return (
+    <div className="app">
+      {screen === "dashboard" && (
+        <DashboardScreen
+          partner={partner}
+          setup={setup}
+          activationLogs={activationLogs}
+          glimmers={glimmers}
+          partnerData={partnerData}
+          onNavigate={setScreen}
+        />
+      )}
+      {screen === "setup" && (
+        <SetupScreen
+          partner={partner}
+          setup={setup}
+          onComplete={refreshData}
+          onBack={() => setScreen("dashboard")}
+        />
+      )}
+      {screen === "regulate" && (
+        <RegulateScreen
+          partner={partner}
+          setup={setup}
+          onBack={() => setScreen("dashboard")}
+          onLog={refreshData}
+        />
+      )}
+      {screen === "repair" && (
+        <RepairScreen
+          partner={partner}
+          setup={setup}
+          onBack={() => setScreen("dashboard")}
+          onLog={refreshData}
+        />
+      )}
+      {screen === "reflect" && (
+        <ReflectScreen
+          partner={partner}
+          setup={setup}
+          onBack={() => setScreen("dashboard")}
+          onSave={refreshData}
+        />
+      )}
+      {screen === "goals" && (
+        <GoalsScreen
+          partner={partner}
+          setup={setup}
+          onBack={() => setScreen("dashboard")}
+          onSave={refreshData}
+        />
+      )}
+      {screen === "glimmer" && (
+        <div className="screen">
+          <div className="top-bar" style={{ padding: "0 0 16px", position: "relative", background: "transparent" }}>
+            <button className="back-btn" onClick={() => setScreen("dashboard")}>← Back</button>
+          </div>
+          <div className="eyebrow">Glimmer Journal</div>
+          <h2>Add a glimmer</h2>
+          <p>A glimmer is a small moment of connection, safety, or warmth. They're easy to miss. Naming them helps your nervous system register more of them.</p>
+          <GlimmerAdd partner={partner} />
+        </div>
+      )}
+
+      <nav className="bottom-nav">
+        {NAV_ITEMS.map(item => (
+          <button
+            key={item.id}
+            className={`nav-item ${activeNav === item.id ? "active" : ""}`}
+            onClick={() => handleNavClick(item.id)}
+          >
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
