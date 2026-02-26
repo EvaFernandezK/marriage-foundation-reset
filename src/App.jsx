@@ -1449,6 +1449,671 @@ function GlimmerAdd({ partner }) {
   );
 }
 
+// ─── ESCALATE SCREEN (full STOP + 5-step + scripts) ───────────────────────────
+function EscalateScreen({ partner, setup, onBack, onNavigate, partnerData }) {
+  const [activation, setActivation] = useState(5);
+  const [returnTime, setReturnTime] = useState("");
+  const shouldPause = activation > 6;
+
+  const STEPS = [
+    { label: "Name It", text: "Say out loud: 'We're escalating.' No blame — just observation. Naming the pattern externalizes it.", phrase: '"We\'re escalating."' },
+    { label: "Check Activation", text: "Rate 0–10. If either is above 6 → pause. If both below 6 → continue.", phrase: '"I\'m at a ___ right now."' },
+    { label: "Upset or Triggered?", text: "Is this about something happening now — or is it touching an old wound? That answer changes everything.", phrase: '"Is this about now, or is this old?"' },
+    { label: "Respond Intentionally", text: "One feeling. One need. One request. No history stacking. No character attacks.", phrase: '"I felt ___ when ___. I need ___. Can we ___?"' },
+    { label: "Repair if Needed", text: "If escalation happened before you caught it — name what you did, take ownership, offer reconnection. Within 24 hours.", phrase: '"I don\'t like how that went. Can we reset?"' },
+  ];
+
+  return (
+    <AppScreen screen="regulate" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+      <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
+      <div style={{ padding: "0 44px 48px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
+        <div style={{ height: 16 }} />
+        <div className="eyebrow">We're escalating</div>
+        <div className="heading-md">Stop here first.</div>
+        <p className="body-text" style={{ margin: "10px 0 20px" }}>Before you say anything to your partner — interrupt yourself first.</p>
+
+        {/* STOP skill */}
+        <div className="card" style={{ marginBottom: 24, background: "rgba(255,254,252,0.85)", border: "1px solid rgba(255,255,255,0.80)" }}>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>The STOP Skill — Internal, body-first</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+            {[
+              { l: "S", w: "Stop", d: "Freeze. Don't act on the urge. Don't speak, text, or do anything yet." },
+              { l: "T", w: "Take a Breath", d: "One slow breath. In through the nose, out through the mouth." },
+              { l: "O", w: "Observe", d: "Notice what's happening inside. Body? Thoughts? Feelings? No judgment." },
+              { l: "P", w: "Proceed Mindfully", d: "Now choose your next move consciously. What do you actually want?" },
+            ].map(s => (
+              <div key={s.l} style={{ background: "var(--surface-sm)", border: "1px solid var(--stroke-sm)", borderRadius: "var(--radius-sm)", padding: "12px 14px" }}>
+                <div style={{ fontFamily: "var(--serif)", fontSize: "1.8rem", fontWeight: 300, color: "var(--ink)", lineHeight: 1, marginBottom: 4 }}>{s.l}</div>
+                <div style={{ fontSize: "0.76rem", fontWeight: 400, color: "var(--ink-soft)", marginBottom: 3 }}>{s.w}</div>
+                <div className="caption-text">{s.d}</div>
+              </div>
+            ))}
+          </div>
+          <div className="insight" style={{ marginTop: 14, marginBottom: 0 }}>"My body is activated right now. I'm going to stop and breathe before I do or say anything else."</div>
+        </div>
+
+        {/* Activation check */}
+        <div className="section-label">Step 1 — Check your activation</div>
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="field">
+            <label>My activation right now</label>
+            <div className="slider-wrap">
+              <div className="slider-val" style={{ color: activationColor(activation) }}>{activation}/10</div>
+              <input type="range" min="1" max="10" value={activation} onChange={e => setActivation(parseInt(e.target.value))} />
+              <div className="slider-labels"><span>Calm (1)</span><span>Flooded (10)</span></div>
+            </div>
+          </div>
+          <div className="insight" style={{ marginBottom: 0 }}>
+            {activation <= 6 ? "You can continue. Move to the 5-step protocol below." : "⚠ You're flooded. Pause before continuing — use Step 2."}
+          </div>
+        </div>
+
+        {/* Pause */}
+        {shouldPause && (
+          <div className="card-bright fade-up" style={{ marginBottom: 20 }}>
+            <div className="section-label">Step 2 — Pause & set a return time</div>
+            <p className="body-text" style={{ marginBottom: 14 }}>The pause is not abandonment. It is stabilization. Say the return time out loud before you leave the room.</p>
+            <div className="insight">"I'm coming back. I just need to reset. I'm not leaving — I need <strong>X minutes</strong> and then I'm back with you."</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+              {["20 min", "30 min", "1 hour", "After sleep", "Tomorrow morning"].map(t => (
+                <button key={t} className={`pill${returnTime === t ? " active" : ""}`} onClick={() => setReturnTime(t)}>{t}</button>
+              ))}
+            </div>
+            {returnTime && <p className="caption-text" style={{ marginTop: 10 }}>Returning at: {returnTime} from now. Stay in your own space until then.</p>}
+          </div>
+        )}
+
+        {/* 5-step protocol */}
+        <div className="section-label" style={{ marginTop: 8 }}>The 5-step protocol — when you return</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+          {STEPS.map((s, i) => (
+            <div key={i} className="card" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+              <div style={{ fontFamily: "var(--serif)", fontSize: "1.5rem", fontWeight: 300, color: "var(--ink-faint)", lineHeight: 1, flexShrink: 0, minWidth: 20, textAlign: "center" }}>{i + 1}</div>
+              <div style={{ flex: 1 }}>
+                <div className="heading-sm" style={{ marginBottom: 4 }}>{s.label}</div>
+                <p className="body-text" style={{ margin: "0 0 6px" }}>{s.text}</p>
+                <div className="insight" style={{ marginBottom: 0, padding: "8px 12px" }}>{s.phrase}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="card-bright" style={{ textAlign: "center", padding: "20px 24px", marginBottom: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>The formula</div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ink)" }}>
+            <em>Feeling</em> &nbsp;+&nbsp; <em>Ownership</em> &nbsp;+&nbsp; <em>Request</em>
+          </div>
+        </div>
+
+        <button className="btn btn-primary-wide" onClick={() => onNavigate("repair")}>Ready to repair →</button>
+        <button className="btn btn-ghost btn-full" onClick={onBack} style={{ marginTop: 10 }}>Back to dashboard</button>
+      </div>
+    </AppScreen>
+  );
+}
+
+// ─── LEARN SCREEN — 6 tabs ─────────────────────────────────────────────────────
+const LEARN_TABS = [
+  { id: "profile",  label: "Who Am I in Conflict" },
+  { id: "window",   label: "Window of Tolerance" },
+  { id: "cycle",    label: "Map Your Loop" },
+  { id: "deeper",   label: "The Deeper Cycle" },
+  { id: "practice", label: "Into Practice" },
+  { id: "shared",   label: "👥 Our Shared View" },
+];
+
+function LearnScreen({ partner, setup, onBack, onNavigate, partnerData }) {
+  const [tab, setTab] = useState("profile");
+  const [learnData, setLearnData] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  async function save(updates) {
+    const merged = { ...learnData, ...updates };
+    setLearnData(merged);
+    setSaving(true);
+    try { await supabase.from("setup").update({ learn_data: merged, updated_at: new Date().toISOString() }).eq("partner_id", partner.id); }
+    catch(e) { console.error(e); } finally { setSaving(false); }
+  }
+
+  useEffect(() => {
+    if (setup?.learn_data) setLearnData(setup.learn_data);
+  }, [setup]);
+
+  const TABS_LIST = LEARN_TABS;
+  const idx = TABS_LIST.findIndex(t => t.id === tab);
+
+  function next() {
+    if (idx < TABS_LIST.length - 1) setTab(TABS_LIST[idx + 1].id);
+  }
+
+  return (
+    <AppScreen screen="reflect" layout="full" activeNav="tools" onNavClick={onNavigate} partnerData={partnerData}>
+      <div className="top-bar fade-up">
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <span className="caption-text">{idx + 1} of {TABS_LIST.length}</span>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ padding: "12px 44px 0", overflowX: "auto", display: "flex", gap: 4, borderBottom: "1px solid rgba(255,255,255,0.32)", flexShrink: 0 }} className="fade-up delay-1">
+        {TABS_LIST.map((t, i) => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            background: "none", border: "none", cursor: "pointer",
+            fontFamily: "var(--sans)", fontSize: "0.70rem", fontWeight: tab === t.id ? 400 : 300,
+            color: tab === t.id ? "var(--ink)" : "var(--ink-muted)",
+            padding: "8px 12px", borderBottom: tab === t.id ? "2px solid var(--ink)" : "2px solid transparent",
+            whiteSpace: "nowrap", letterSpacing: "0.03em", transition: "all 0.15s",
+          }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: "20px 44px 48px", flex: 1, overflowY: "auto" }} className="fade-up delay-2">
+        {tab === "profile"  && <ProfileTab  data={learnData} onSave={save} partner={partner} onNext={next} />}
+        {tab === "window"   && <WindowTab   data={learnData} onSave={save} partner={partner} onNext={next} />}
+        {tab === "cycle"    && <CycleTab    data={learnData} onSave={save} partner={partner} onNext={next} />}
+        {tab === "deeper"   && <DeeperTab   data={learnData} onSave={save} partner={partner} onNext={next} />}
+        {tab === "practice" && <PracticeTab data={learnData} onSave={save} partner={partner} onNext={next} />}
+        {tab === "shared"   && <SharedView  data={learnData} onSave={save} partner={partner} onNavigate={onNavigate} />}
+      </div>
+    </AppScreen>
+  );
+}
+
+// Chip component
+function Chips({ fieldKey, options, data, onSave, color }) {
+  const sel = data[fieldKey] || [];
+  const toggle = v => onSave({ [fieldKey]: sel.includes(v) ? sel.filter(x => x !== v) : [...sel, v] });
+  return (
+    <div className="pills" style={{ marginTop: 8 }}>
+      {options.map(o => (
+        <button key={o} className={`pill${sel.includes(o) ? " active" : ""}`} onClick={() => toggle(o)}>{o}</button>
+      ))}
+    </div>
+  );
+}
+
+// Inline text input row
+function LearnField({ label, fieldKey, data, onSave, placeholder, rows = 2 }) {
+  const [val, setVal] = useState(data[fieldKey] || "");
+  useEffect(() => setVal(data[fieldKey] || ""), [data[fieldKey]]);
+  return (
+    <div className="field">
+      {label && <label>{label}</label>}
+      <textarea value={val} rows={rows} placeholder={placeholder}
+        onChange={e => setVal(e.target.value)}
+        onBlur={() => { if (val !== (data[fieldKey] || "")) onSave({ [fieldKey]: val }); }} />
+    </div>
+  );
+}
+
+// ── TAB 1: WHO AM I IN CONFLICT ──
+function ProfileTab({ data, onSave, partner, onNext }) {
+  return (
+    <div>
+      <div className="heading-md">Who am I in conflict?</div>
+      <p className="body-text" style={{ margin: "10px 0 16px" }}>You can only control yourself. Before you can understand the cycle you create together, you have to understand what you do.</p>
+      <div className="insight">Self-awareness before shared awareness. The more clearly you see your own pattern, the more choice you have in the moment.</div>
+      <div style={{ height: 20 }} />
+
+      <div className="field">
+        <label>When conflict begins, I tend to…</label>
+        <Chips fieldKey="profile_first_move" data={data} onSave={onSave} options={["Get louder", "Go quiet", "Explain myself", "Leave the room", "Cry", "Shut down", "Push back", "Try to fix it fast"]} />
+      </div>
+      <div className="field">
+        <label>What I feel in my body when activated…</label>
+        <Chips fieldKey="profile_body_signs" data={data} onSave={onSave} options={["Chest tightens", "Jaw clenches", "Heart races", "Stomach drops", "Go numb", "Shoulders tense", "Ears get hot", "Feel frozen"]} />
+      </div>
+      <div className="field">
+        <label>What I tell myself during conflict…</label>
+        <Chips fieldKey="profile_thoughts" data={data} onSave={onSave} options={["They don't care", "I'm being attacked", "I'm going to lose this", "Nothing I say matters", "This is hopeless", "I'm the problem", "They'll leave", "I have to fix this now"]} />
+      </div>
+      <div className="field">
+        <label>What I actually feel underneath the reaction…</label>
+        <Chips fieldKey="profile_underneath" data={data} onSave={onSave} options={["Scared", "Hurt", "Invisible", "Not enough", "Abandoned", "Trapped", "Overwhelmed", "Alone"]} />
+      </div>
+      <LearnField label="Anything else about how you show up in conflict?" fieldKey="profile_notes" data={data} onSave={onSave} placeholder="Write anything that doesn't fit above…" rows={3} />
+      <div style={{ height: 20 }} />
+      <button className="btn btn-primary-wide" onClick={onNext}>Next: Window of Tolerance →</button>
+    </div>
+  );
+}
+
+// ── TAB 2: WINDOW OF TOLERANCE ──
+function WindowTab({ data, onSave, partner, onNext }) {
+  return (
+    <div>
+      <div className="heading-md">Your window of tolerance</div>
+      <p className="body-text" style={{ margin: "10px 0 16px" }}>There's a zone where you can feel stressed, even angry — and still think clearly. Outside that window, your body takes over. You cannot resolve conflict outside your window.</p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+        {[
+          { label: "↑ Above — Hyperarousal", desc: "Heart racing. Voice rising. Angry, reactive. You say things you don't mean.", bg: "rgba(192,88,72,0.07)", border: "rgba(192,88,72,0.18)" },
+          { label: "↔ Inside — Regulated", desc: "You can feel upset and still stay present. Disagree without exploding. This is where real conversation happens.", bg: "rgba(122,158,142,0.08)", border: "rgba(122,158,142,0.22)" },
+          { label: "↓ Below — Hypoarousal", desc: "System shuts down. Numb, foggy, frozen. You go quiet — not because you don't care, but because your body hit its limit.", bg: "rgba(100,115,150,0.07)", border: "rgba(100,115,150,0.18)" },
+        ].map(z => (
+          <div key={z.label} style={{ background: z.bg, border: `1px solid ${z.border}`, borderRadius: "var(--radius-sm)", padding: "12px 16px" }}>
+            <div style={{ fontSize: "0.70rem", fontWeight: 400, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-soft)", marginBottom: 4 }}>{z.label}</div>
+            <div className="body-text" style={{ margin: 0 }}>{z.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      <LearnField label="Above my window, I notice:" fieldKey="window_above" data={data} onSave={onSave} placeholder="Physical signs, thoughts, behaviors…" />
+      <LearnField label="Below my window, I notice:" fieldKey="window_below" data={data} onSave={onSave} placeholder="Signs of shutdown, numbness, going distant…" />
+      <LearnField label="What helps me return to my window:" fieldKey="window_return" data={data} onSave={onSave} placeholder="Movement, breathing, grounding, space…" />
+
+      <div className="insight">This is what the work is for. Not a perfect relationship — a regulated one.</div>
+      <div style={{ height: 20 }} />
+      <button className="btn btn-primary-wide" onClick={onNext}>Next: Map Your Loop →</button>
+    </div>
+  );
+}
+
+// ── TAB 3: MAP YOUR LOOP ──
+function CycleTab({ data, onSave, partner, onNext }) {
+  const cycleData = data.cycleMap || {};
+  const updateCycle = (f, v) => onSave({ cycleMap: { ...cycleData, [f]: v } });
+
+  return (
+    <div>
+      <div className="heading-md">How we create this together</div>
+      <p className="body-text" style={{ margin: "10px 0 16px" }}>Every couple stuck in the same fight has a loop. The topic changes, but the pattern stays the same. Map your side — then use the Shared View to see it together.</p>
+
+      <div className="two-col" style={{ marginBottom: 20 }}>
+        {[
+          { title: "Pursue → Withdraw", desc: "One partner reaches for connection through intensity. The other pulls away.", note: "Pursuer feels abandoned. Withdrawer feels attacked. Both feel alone." },
+          { title: "Attack → Defend", desc: "One partner leads with blame or accusation. The other defends or counterattacks.", note: "Neither feels heard. Conflict escalates without resolution." },
+        ].map(p => (
+          <div key={p.title} className="card" style={{ fontSize: "0.78rem" }}>
+            <div style={{ fontWeight: 400, fontSize: "0.70rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 8 }}>{p.title}</div>
+            <p className="body-text" style={{ margin: "0 0 8px" }}>{p.desc}</p>
+            <div className="insight" style={{ margin: 0, padding: "8px 10px", fontSize: "0.78rem" }}>{p.note}</div>
+          </div>
+        ))}
+      </div>
+
+      {[
+        { key: "trigger",      label: "When I feel…",                        ph: "rejected / dismissed / controlled / invisible" },
+        { key: "reaction",     label: "I tend to…",                          ph: "attack / go quiet / push / shut down / pursue" },
+        { key: "partnerFeels", label: "Which makes my partner feel…",        ph: "attacked / alone / unsafe / smothered" },
+        { key: "longFor",      label: "What I'm actually longing for…",      ph: "to feel safe / to matter / to feel close" },
+      ].map(s => (
+        <div key={s.key} className="field">
+          <label>{s.label}</label>
+          <input style={{ width: "100%", background: "rgba(252,251,249,0.65)", border: "1px solid rgba(255,255,255,0.60)", borderRadius: "var(--radius-sm)", padding: "12px 14px", fontFamily: "var(--sans)", fontSize: "0.84rem", color: "var(--ink)", outline: "none" }}
+            placeholder={s.ph} value={cycleData[s.key] || ""} onChange={e => updateCycle(s.key, e.target.value)} />
+        </div>
+      ))}
+
+      <div className="insight">↻ The enemy is the loop — not your partner.</div>
+      <div style={{ height: 20 }} />
+      <button className="btn btn-primary-wide" onClick={onNext}>Next: The Deeper Cycle →</button>
+    </div>
+  );
+}
+
+// ── TAB 4: THE DEEPER CYCLE (EFT) ──
+const EFT_BEHAVIORS = { pursue: ["Criticize","Demand","Push to talk","Accuse","Protest","Chase"], withdraw: ["Go quiet","Shut down","Agree just to end it","Pull away","Become distant","Disappear"] };
+
+function DeeperTab({ data, onSave, partner, onNext }) {
+  const k = f => `eft_${f}`;
+  const get = f => data[k(f)] || [];
+  const getStr = f => data[k(f)] || "";
+  const toggle = (field, val) => {
+    const cur = get(field);
+    onSave({ [k(field)]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] });
+  };
+  const move = getStr("move");
+  const behaviorOptions = move === "pursue" ? EFT_BEHAVIORS.pursue : move === "withdraw" ? EFT_BEHAVIORS.withdraw : [...EFT_BEHAVIORS.pursue, ...EFT_BEHAVIORS.withdraw];
+
+  return (
+    <div>
+      <div className="heading-md">What's actually happening underneath</div>
+      <p className="body-text" style={{ margin: "10px 0 16px" }}>What your partner sees during conflict is never the whole story. The behaviors on the surface are protective moves. Underneath every protective move is a feeling your partner can't see — and underneath that, something you're reaching for.</p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+        {[
+          { label: "↑ Above the Line — What your partner can see", desc: "Your move (pursue, withdraw) and your protective emotions (anger, frustration). This is what lands on your partner.", bg: "rgba(192,88,72,0.07)", border: "rgba(192,88,72,0.16)" },
+          { label: "— The Line of Consciousness —", desc: "What you can access when you slow down and look inward.", bg: "rgba(184,153,90,0.07)", border: "rgba(184,153,90,0.22)" },
+          { label: "↓ Below the Line — What your partner can't see", desc: "Your vulnerable feelings (scared, hurt, alone) and your unmet need. This is the real message your protective move is trying to send.", bg: "rgba(122,158,142,0.08)", border: "rgba(122,158,142,0.20)" },
+        ].map(z => (
+          <div key={z.label} style={{ background: z.bg, border: `1px solid ${z.border}`, borderRadius: "var(--radius-sm)", padding: "10px 14px" }}>
+            <div style={{ fontSize: "0.65rem", fontWeight: 400, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-soft)", marginBottom: 3 }}>{z.label}</div>
+            <div className="caption-text">{z.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="insight" style={{ marginBottom: 20 }}>Your move is not the message. The cycle locks because the need stays hidden.</div>
+
+      {/* Your move */}
+      <div className="field">
+        <label>Your move — what your partner sees</label>
+        <div className="pills">
+          {["pursue","withdraw","both"].map(v => (
+            <button key={v} className={`pill${move === v ? " active" : ""}`} onClick={() => onSave({ [k("move")]: v })}>{v === "pursue" ? "I pursue" : v === "withdraw" ? "I withdraw" : "Both"}</button>
+          ))}
+        </div>
+        {move && <div style={{ marginTop: 8 }}><Chips fieldKey={k("behaviors")} data={data} onSave={onSave} options={behaviorOptions} /></div>}
+      </div>
+
+      <div className="field">
+        <label>Surface feelings — above the line</label>
+        <Chips fieldKey={k("protective")} data={data} onSave={onSave} options={["Angry","Frustrated","Anxious","Resentful","Dismissed","Irritated","Jealous","Overwhelmed"]} />
+      </div>
+      <div className="field">
+        <label>Vulnerable feelings — below the line</label>
+        <Chips fieldKey={k("vulnerable")} data={data} onSave={onSave} options={["Scared","Hurt","Ashamed","Alone","Invisible","Not enough","Abandoned","Unloved","Longing","Hopeless"]} />
+      </div>
+      <div className="field">
+        <label>What you're actually reaching for</label>
+        <Chips fieldKey={k("needs")} data={data} onSave={onSave} options={["To know I matter","To feel close","To feel safe enough to open up","To feel seen","To feel like I'm enough","To not be alone in this"]} />
+      </div>
+
+      <div className="card-bright" style={{ textAlign: "center", padding: "18px 20px", marginTop: 8 }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>What you both share</div>
+        <p style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: "1rem", color: "var(--ink)", lineHeight: 1.6 }}>Underneath the cycle, you both want the same thing:<br />to feel safe, seen, and loved by each other.<br /><span style={{ color: "var(--ink-muted)", fontStyle: "normal", fontSize: "0.84rem" }}>The cycle is the obstacle — not your partner.</span></p>
+      </div>
+
+      <div style={{ height: 20 }} />
+      <button className="btn btn-primary-wide" onClick={onNext}>Next: Into Practice →</button>
+    </div>
+  );
+}
+
+// ── TAB 5: INTO PRACTICE ──
+function PracticeTab({ data, onSave, partner, onNext }) {
+  const [triggers, setTriggers] = useState(data.myTriggers || [{ id: 1, trigger: "", tell: "", cope: "", need: "" }]);
+
+  const updateTrigger = (id, field, val) => {
+    const updated = triggers.map(t => t.id === id ? { ...t, [field]: val } : t);
+    setTriggers(updated); onSave({ myTriggers: updated });
+  };
+  const addTrigger = () => {
+    if (triggers.length >= 5) return;
+    const updated = [...triggers, { id: Date.now(), trigger: "", tell: "", cope: "", need: "" }];
+    setTriggers(updated); onSave({ myTriggers: updated });
+  };
+
+  return (
+    <div>
+      <div className="heading-md">From understanding to action</div>
+      <p className="body-text" style={{ margin: "10px 0 16px" }}>You now have a map. This section is where understanding becomes practice — specific enough to use in the actual moment.</p>
+
+      <div className="section-label">My named triggers (3–5 max)</div>
+      <p className="body-text" style={{ marginBottom: 14 }}>The more precisely you can name a trigger, the more quickly you'll recognize it — and catch yourself before the cycle engages.</p>
+
+      {triggers.map((t, i) => (
+        <div key={t.id} className="card" style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: "0.60rem", fontWeight: 400, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--accent-gold)", marginBottom: 12 }}>Trigger {i + 1}</div>
+          {[
+            { label: "The trigger", field: "trigger", ph: "When my partner says / does / doesn't do…" },
+            { label: "What I tell myself", field: "tell", ph: "The story I run in my head…" },
+            { label: "How I cope (what I actually do)", field: "cope", ph: "My automatic response…" },
+            { label: "What I actually need", field: "need", ph: "The underlying need this trigger is touching…" },
+          ].map(f => (
+            <div key={f.field} className="field">
+              <label>{f.label}</label>
+              <input style={{ width: "100%", background: "rgba(252,251,249,0.65)", border: "1px solid rgba(255,255,255,0.60)", borderRadius: "var(--radius-sm)", padding: "11px 14px", fontFamily: "var(--sans)", fontSize: "0.84rem", color: "var(--ink)", outline: "none" }}
+                placeholder={f.ph} value={t[f.field]} onChange={e => updateTrigger(t.id, f.field, e.target.value)} />
+            </div>
+          ))}
+        </div>
+      ))}
+      {triggers.length < 5 && (
+        <button className="btn btn-ghost" onClick={addTrigger} style={{ marginBottom: 20 }}>+ Add another trigger ({triggers.length}/5)</button>
+      )}
+
+      <LearnField label="What pattern do I see across my triggers?" fieldKey="practice_observations" data={data} onSave={onSave} placeholder="What do they have in common? What does that tell you?" rows={3} />
+      <LearnField label="My action items — what I'm going to do differently" fieldKey="practice_actions" data={data} onSave={onSave} placeholder="Specific, small, behavioral changes. Not 'be less reactive' — 'when I feel X, I will Y.'" rows={4} />
+      <LearnField label="What I want my partner to know about my triggers" fieldKey="practice_share" data={data} onSave={onSave} placeholder="Context, background, or requests that would help them support you…" rows={3} />
+
+      <div style={{ height: 20 }} />
+      <button className="btn btn-primary-wide" onClick={onNext}>Next: Our Shared View →</button>
+    </div>
+  );
+}
+
+// ── TAB 6: SHARED VIEW ──
+function SharedView({ data, onSave, partner, onNavigate }) {
+  // Build bridge statement from EFT data
+  const move = data["eft_move"] || "";
+  const vulnerable = (data["eft_vulnerable"] || []).slice(0, 2).join(", ") || "_____";
+  const need = (data["eft_needs"] || []).slice(0, 2).join(", ") || "_____";
+  const hasEFT = !!(data["eft_move"] || (data["eft_vulnerable"] || []).length);
+  const cycleData = data.cycleMap || {};
+  const hasCycle = !!(cycleData.trigger || cycleData.reaction);
+
+  return (
+    <div>
+      <div className="heading-md">Our shared view</div>
+      <p className="body-text" style={{ margin: "10px 0 16px" }}>Both partners have completed their private sections. This is where you come together — to read each other's maps, see the combined cycle, and reflect. Sit together for this one.</p>
+      <div className="insight" style={{ marginBottom: 20 }}>Only open this when both of you are regulated (below 5/10). This is not for conflict — it's for understanding.</div>
+
+      {/* Combined cycle narrative */}
+      <div className="section-label">Our combined cycle</div>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <p className="caption-text" style={{ marginBottom: 12 }}>Read this aloud together. This is the cycle you create — not because you're bad at relationships, but because two nervous systems in threat mode lock into each other.</p>
+        {hasCycle ? (
+          <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: "0.94rem", lineHeight: 2.2, color: "var(--ink-soft)" }}>
+            <div>When I feel <strong>{cycleData.trigger || "___"}</strong>…</div>
+            <div style={{ paddingLeft: 16 }}>I tend to <strong>{cycleData.reaction || "___"}</strong>.</div>
+            <div style={{ paddingLeft: 16 }}>Which makes my partner feel <strong>{cycleData.partnerFeels || "___"}</strong>…</div>
+            <div style={{ paddingLeft: 28 }}>And the loop starts again.</div>
+          </div>
+        ) : (
+          <p className="caption-text" style={{ color: "var(--ink-faint)" }}>Complete Tab 3 (Map Your Loop) first.</p>
+        )}
+      </div>
+
+      {/* Bridge statement */}
+      <div className="section-label">My bridge statement</div>
+      <p className="body-text" style={{ marginBottom: 12 }}>Share this with your partner when you're both calm. This is built from what you mapped in The Deeper Cycle.</p>
+      {hasEFT ? (
+        <div className="card" style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: "0.94rem", lineHeight: 2, color: "var(--ink)", marginBottom: 20 }}>
+          "When I <strong>{move || "___"}</strong>, I'm not trying to hurt you.<br />
+          I'm actually feeling <strong>{vulnerable}</strong>.<br />
+          What I'm really reaching for is <strong>{need}</strong>.<br />
+          <span style={{ fontStyle: "normal", color: "var(--ink-muted)", fontSize: "0.84rem" }}>The cycle is the problem — not you."</span>
+        </div>
+      ) : (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <p className="caption-text" style={{ color: "var(--ink-faint)" }}>Complete Tab 4 (The Deeper Cycle) first.</p>
+        </div>
+      )}
+
+      {/* WOT side by side */}
+      <div className="section-label">My window of tolerance</div>
+      <div className="card" style={{ marginBottom: 20 }}>
+        {data.window_above ? (
+          <div style={{ fontSize: "0.84rem", color: "var(--ink-soft)", lineHeight: 1.8 }}>
+            {data.window_above && <div><strong>Above my window:</strong> {data.window_above}</div>}
+            {data.window_below && <div><strong>Below my window:</strong> {data.window_below}</div>}
+            {data.window_return && <div><strong>I return by:</strong> {data.window_return}</div>}
+          </div>
+        ) : (
+          <p className="caption-text" style={{ color: "var(--ink-faint)" }}>Complete Tab 2 (Window of Tolerance) first.</p>
+        )}
+      </div>
+
+      {/* Reflection fields */}
+      <LearnField label="What do you notice about your combined loop? What surprised you?" fieldKey="shared_cycle_reflection" data={data} onSave={onSave} placeholder="What landed when you saw it together?" rows={4} />
+      <LearnField label="What came up when you heard each other's bridge statement?" fieldKey="shared_eft_reflection" data={data} onSave={onSave} placeholder="What landed differently when you could see each other's hidden layer?" rows={4} />
+      <LearnField label="Reflect together: what did you learn about each other?" fieldKey="shared_profile_reflect" data={data} onSave={onSave} placeholder="What surprised you? What do you want your partner to know you now understand?" rows={4} />
+
+      <div style={{ height: 20 }} />
+      <button className="btn btn-primary-wide" onClick={() => onNavigate("agreement")}>Complete: Sign the Agreement →</button>
+    </div>
+  );
+}
+
+// ─── AGREEMENT SCREEN ──────────────────────────────────────────────────────────
+function AgreementScreen({ partner, onBack, onNavigate, partnerData }) {
+  const [sig, setSig] = useState("");
+  const [signed, setSigned] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function sign() {
+    if (!sig.trim()) return;
+    setSaving(true);
+    try { await supabase.from("setup").update({ agreement_signed: true, agreement_sig: sig, updated_at: new Date().toISOString() }).eq("partner_id", partner.id); setSigned(true); }
+    catch(e) { console.error(e); } finally { setSaving(false); }
+  }
+
+  const COMMITMENTS = [
+    { num: 1, title: "We Commit to Safety First", text: "We will not use name-calling, character attacks, or threats during conflict. Emotional safety is the foundation of everything else." },
+    { num: 2, title: "We Commit to the STOP Skill", text: "Before we say anything reactive, we will stop, breathe, and observe what's happening in our own bodies." },
+    { num: 3, title: "We Commit to Pausing When Activated", text: "If either partner rates activation above 6/10, we will pause and name a return time. A pause is not abandonment — it is stabilization." },
+    { num: 4, title: "We Commit to Present-Focused Conflict", text: "We will address one issue at a time. We will not stack past grievances onto current conversations." },
+    { num: 5, title: "We Commit to Repair", text: "If escalation happens, we will attempt repair within 24 hours. We will name the behavior, take ownership, and offer reconnection." },
+    { num: 6, title: "We Commit to Reinforcement", text: "We will actively look for glimmers and reinforce progress. Safety is built through repeated small shifts, not grand gestures." },
+  ];
+
+  return (
+    <AppScreen screen="goals" layout="full" activeNav="goals" onNavClick={onNavigate} partnerData={partnerData}>
+      <div className="top-bar fade-up"><button className="back-btn" onClick={onBack}>← Back</button></div>
+      <div style={{ padding: "0 44px 48px", flex: 1, overflowY: "auto" }} className="fade-up delay-1">
+        <div style={{ height: 16 }} />
+        <div className="eyebrow">The Foundation Reset Agreement</div>
+        <div className="heading-md">Your commitment to protecting the structure</div>
+        <p className="body-text" style={{ margin: "10px 0 24px" }}>This is not a contract — it is a choice. A declaration that you are both willing to do something different.</p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+          {COMMITMENTS.map(c => (
+            <div key={c.num} className="card" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+              <div style={{ fontFamily: "var(--serif)", fontSize: "1.5rem", fontWeight: 300, color: "var(--ink-faint)", lineHeight: 1, flexShrink: 0, minWidth: 20 }}>{c.num}</div>
+              <div>
+                <div className="heading-sm" style={{ marginBottom: 4 }}>{c.title}</div>
+                <p className="body-text" style={{ margin: 0 }}>{c.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {!signed ? (
+          <>
+            <div className="field"><label>Sign with your name</label><input value={sig} onChange={e => setSig(e.target.value)} placeholder="Your first name…" /></div>
+            <button className="btn btn-primary-wide" disabled={!sig.trim() || saving} onClick={sign}>{saving ? "Signing…" : "Sign the Agreement →"}</button>
+          </>
+        ) : (
+          <div className="card-bright" style={{ textAlign: "center", padding: "22px" }}>
+            <div style={{ fontSize: "0.60rem", letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--accent-sage)", marginBottom: 8 }}>✓ Signed</div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: "1.1rem", color: "var(--ink)" }}>{sig}</div>
+          </div>
+        )}
+
+        <div className="insight" style={{ marginTop: 24, textAlign: "center" }}>"It is not you vs. me. It is us protecting the structure."</div>
+      </div>
+    </AppScreen>
+  );
+}
+
+// ─── UPDATED DASHBOARD — adds Learn tool card ──────────────────────────────────
+function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNavigate }) {
+  const last = logs?.[0];
+  const setupDone = setup?.replacement_behavior && setup?.triggers?.length > 0;
+  const recentGlimmers = glimmers?.slice(0, 3) || [];
+
+  return (
+    <AppScreen screen="dashboard" activeNav="dashboard" onNavClick={onNavigate} partnerData={partnerData}>
+      <div className="main-header fade-up">
+        <div className="eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+        <div className="heading">{greeting()}, {partner?.name?.split(" ")[0]}.</div>
+        <div className="subheading">What do you need right now?</div>
+      </div>
+
+      <div className="main-body">
+        {!setupDone && (
+          <div className="nudge-card fade-up delay-1">
+            <div className="nudge-text">
+              <div className="eyebrow" style={{ marginBottom: 5 }}>Finish your setup</div>
+              <div className="heading-sm">Your replacement behavior isn't defined yet</div>
+              <p className="body-text">This is the most important part of the system. You'll want it ready before you need it.</p>
+            </div>
+            <button className="btn btn-primary" onClick={() => onNavigate("setup")}>Complete Setup →</button>
+          </div>
+        )}
+
+        {/* Heat tools */}
+        <div className="fade-up delay-2">
+          <div className="section-label">Something is happening right now</div>
+          <div className="tools-grid">
+            <div className="tool-card" onClick={() => onNavigate("escalate")}>
+              <span className="tool-icon">🔥</span>
+              <span className="tool-name">Escalating</span>
+              <span className="tool-desc">We're in it right now</span>
+            </div>
+            <div className="tool-card" onClick={() => onNavigate("regulate")}>
+              <span className="tool-icon">🌿</span>
+              <span className="tool-name">Regulate</span>
+              <span className="tool-desc">I need to calm my nervous system</span>
+            </div>
+            <div className="tool-card" onClick={() => onNavigate("repair")}>
+              <span className="tool-icon">🤝</span>
+              <span className="tool-name">Repair</span>
+              <span className="tool-desc">After the fight</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Learn tools */}
+        <div className="fade-up delay-3">
+          <div className="section-label">Understand & prevent</div>
+          <div className="tools-grid">
+            <div className="tool-card" onClick={() => onNavigate("learn")}>
+              <span className="tool-icon">🏗️</span>
+              <span className="tool-name">Learn the System</span>
+              <span className="tool-desc">WOT · Cycle map · EFT · Shared view</span>
+            </div>
+            <div className="tool-card" onClick={() => onNavigate("reflect")}>
+              <span className="tool-icon">🔍</span>
+              <span className="tool-name">Reflect</span>
+              <span className="tool-desc">Calm-moment pattern work</span>
+            </div>
+            <div className="tool-card" onClick={() => onNavigate("agreement")}>
+              <span className="tool-icon">🤝</span>
+              <span className="tool-name">Agreement</span>
+              <span className="tool-desc">Our shared commitments</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="two-col fade-up delay-4">
+          <div className="card-bright">
+            <div className="eyebrow" style={{ marginBottom: 14 }}>My last logged state</div>
+            {last ? (
+              <>
+                <div className="act-row">
+                  <div className="act-track"><div className="act-fill" style={{ width: `${last.level * 10}%`, background: activationColor(last.level) }} /></div>
+                  <div className="act-num">{last.level}</div>
+                </div>
+                <div className="act-meta">
+                  <span className="act-state" style={{ color: activationColor(last.level) }}>{activationLabel(last.level)}</span>
+                  <span className="act-tool">{fmtDate(last.created_at)}</span>
+                </div>
+                {last.note && <div className="act-note">"{last.note}"</div>}
+              </>
+            ) : <p className="body-text" style={{ color: "var(--ink-faint)" }}>No logs yet.</p>}
+          </div>
+
+          <div className="card-bright">
+            <div className="eyebrow" style={{ marginBottom: 14 }}>Recent glimmers</div>
+            {recentGlimmers.length > 0 ? recentGlimmers.map(g => (
+              <div className="glimmer-item" key={g.id}>
+                <span className="g-star">✦</span>
+                <span className="g-text">{g.text}</span>
+                <span className="g-date">{fmtDate(g.created_at)}</span>
+              </div>
+            )) : <p className="body-text" style={{ color: "var(--ink-faint)" }}>No glimmers yet.</p>}
+            <button className="btn btn-ghost" onClick={() => onNavigate("glimmer")} style={{ marginTop: 14, width: "100%" }}>+ Add a glimmer ✦</button>
+          </div>
+        </div>
+      </div>
+    </AppScreen>
+  );
+}
+
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(null);
@@ -1510,13 +2175,12 @@ export default function App() {
 
   const navActiveMap = {
     dashboard: "dashboard", setup: "setup",
-    regulate: "tools", repair: "tools", reflect: "tools",
-    goals: "goals", glimmer: "goals",
+    escalate: "tools", regulate: "tools", repair: "tools", reflect: "tools", learn: "tools",
+    goals: "goals", glimmer: "goals", agreement: "goals",
   };
 
   function handleNav(id) {
-    if (id === "tools") { setScreen("dashboard"); setTimeout(() => document.querySelector(".tools-grid")?.scrollIntoView({ behavior: "smooth" }), 80); }
-    else setScreen(id);
+    setScreen(id);
   }
 
   // Loading
@@ -1542,13 +2206,16 @@ export default function App() {
   return (
     <>
       <style>{FONTS + CSS}</style>
-      {screen === "dashboard" && <DashboardScreen {...commonProps} logs={logs} glimmers={glimmers} />}
+      {screen === "dashboard" && <DashboardWithLearn {...commonProps} logs={logs} glimmers={glimmers} />}
       {screen === "setup"     && <SetupScreen     {...commonProps} onComplete={refresh} onBack={() => setScreen("dashboard")} />}
+      {screen === "escalate"  && <EscalateScreen  {...commonProps} onBack={() => setScreen("dashboard")} />}
       {screen === "regulate"  && <RegulateScreen  {...commonProps} onBack={() => setScreen("dashboard")} onLog={refresh} />}
       {screen === "repair"    && <RepairScreen    {...commonProps} onBack={() => setScreen("dashboard")} onLog={refresh} />}
       {screen === "reflect"   && <ReflectScreen   {...commonProps} onBack={() => setScreen("dashboard")} onSave={refresh} />}
+      {screen === "learn"     && <LearnScreen     {...commonProps} onBack={() => setScreen("dashboard")} />}
       {screen === "goals"     && <GoalsScreen     {...commonProps} onBack={() => setScreen("dashboard")} onSave={refresh} />}
       {screen === "glimmer"   && <GlimmerScreen   {...commonProps} onBack={() => setScreen("dashboard")} />}
+      {screen === "agreement" && <AgreementScreen {...commonProps} onBack={() => setScreen("dashboard")} />}
     </>
   );
 }
