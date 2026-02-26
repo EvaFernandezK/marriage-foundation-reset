@@ -1327,10 +1327,10 @@ function RepairScreen({ partner, setup, onBack, onLog, onNavigate, partnerData }
   ];
 
   const FOUR_RS = [
-    { r: "Regret", desc: "Express genuine remorse for the impact, regardless of intention.", example: ""I'm really sorry that what I said hurt you. That was not okay."" },
-    { r: "Responsibility", desc: "Own what you did without minimizing or deflecting. Just the behavior.", example: ""I was sarcastic and I shut down the conversation. That's on me."" },
-    { r: "Recognition", desc: "Acknowledge what your partner experienced — their feelings, their perspective.", example: ""I can see why you felt dismissed. Your point was valid."" },
-    { r: "Remedy", desc: "Offer what you'll do differently. Make it concrete and small.", example: ""Next time I feel frustrated, I'm going to ask for a pause before I respond."" },
+    { r: "Regret", desc: "Express genuine remorse for the impact, regardless of intention.", example: `"I'm really sorry that what I said hurt you. That was not okay."` },
+    { r: "Responsibility", desc: "Own what you did without minimizing or deflecting. Just the behavior.", example: `"I was sarcastic and I shut down the conversation. That's on me."` },
+    { r: "Recognition", desc: "Acknowledge what your partner experienced — their feelings, their perspective.", example: `"I can see why you felt dismissed. Your point was valid."` },
+    { r: "Remedy", desc: "Offer what you'll do differently. Make it concrete and small.", example: `"Next time I feel frustrated, I'm going to ask for a pause before I respond."` },
   ];
 
   const cards = [
@@ -2434,7 +2434,8 @@ export default function App() {
   };
 
   function handleNav(id) {
-    setScreen(id);
+    // "tools" nav item shows the dashboard (which is the tools hub)
+    setScreen(id === "tools" ? "dashboard" : id);
   }
 
   // Loading
