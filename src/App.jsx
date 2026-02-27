@@ -194,20 +194,20 @@ const CSS = `
     text-transform: uppercase; color: var(--ink-muted); margin-bottom: 8px;
   }
   .heading {
-    font-family: var(--serif); font-size: 2.5rem; font-weight: 400;
-    color: var(--ink); line-height: 1.08; letter-spacing: -0.01em; margin-bottom: 5px;
+    font-family: var(--serif); font-size: 2.8rem; font-weight: 400;
+    color: #12151C; line-height: 1.08; letter-spacing: -0.01em; margin-bottom: 5px;
   }
   .heading-md {
-    font-family: var(--serif); font-size: 1.8rem; font-weight: 400;
-    color: var(--ink); line-height: 1.15; margin-bottom: 10px;
+    font-family: var(--serif); font-size: 2.0rem; font-weight: 400;
+    color: #12151C; line-height: 1.15; margin-bottom: 10px;
   }
   .heading-sm {
     font-family: var(--serif); font-size: 1.2rem; font-weight: 400;
     color: var(--ink); line-height: 1.3; margin-bottom: 6px;
   }
   .subheading {
-    font-family: var(--serif); font-size: 1rem; font-weight: 300;
-    font-style: italic; color: var(--ink-muted);
+    font-family: var(--serif); font-size: 1.05rem; font-weight: 300;
+    font-style: italic; color: var(--ink-soft);
   }
   .body-text {
     font-size: 0.92rem; font-weight: 300; color: var(--ink-soft);
@@ -225,8 +225,8 @@ const CSS = `
 
   /* ── CARDS ── */
   .card {
-    background: var(--surface);
-    border: 1px solid var(--stroke);
+    background: rgba(255,255,254,0.90);
+    border: 1px solid rgba(255,255,255,0.88);
     border-radius: var(--radius-lg);
     box-shadow: var(--card-shadow);
     padding: 22px 24px;
@@ -252,8 +252,8 @@ const CSS = `
 
   /* ── NUDGE CARD ── */
   .nudge-card {
-    background: rgba(255,254,252,0.78);
-    border: 1px solid rgba(255,255,255,0.78);
+    background: rgba(255,255,255,0.94);
+    border: 1px solid rgba(255,255,255,0.92);
     border-radius: var(--radius-lg);
     box-shadow: 0 3px 24px rgba(80,95,120,0.10), 0 1px 0 rgba(255,255,255,0.95) inset;
     padding: 22px 28px;
@@ -390,15 +390,15 @@ const CSS = `
   /* ── TOOLS GRID ── */
   .tools-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .tool-card {
-    background: rgba(255,255,254,0.68);
-    border: 1px solid rgba(255,255,255,0.72);
+    background: rgba(255,255,254,0.92);
+    border: 1px solid rgba(255,255,255,0.90);
     border-radius: var(--radius-lg);
-    box-shadow: 0 3px 20px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.95) inset;
-    padding: 22px 14px 20px;
+    box-shadow: 0 4px 24px rgba(55,68,95,0.13), 0 1px 0 rgba(255,255,255,1) inset;
+    padding: 28px 16px 24px;
     text-align: center;
     cursor: pointer; transition: all 0.20s;
-    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
   }
   .tool-card:hover {
     transform: translateY(-3px);
@@ -412,8 +412,8 @@ const CSS = `
   }
   /* Hot tools — slightly elevated/brighter to signal urgency */
   .tool-card.hot {
-    background: rgba(255,255,254,0.82);
-    box-shadow: 0 4px 24px rgba(55,68,95,0.13), 0 1px 0 rgba(255,255,255,1) inset;
+    background: rgba(255,255,255,0.96);
+    box-shadow: 0 5px 28px rgba(55,68,95,0.15), 0 1px 0 rgba(255,255,255,1) inset;
   }
   .tool-card.hot:hover {
     transform: translateY(-3px);
@@ -421,15 +421,15 @@ const CSS = `
   }
   /* Learn tools — slightly recessed/tonal to signal reflection */
   .tool-card.learn {
-    background: rgba(252,251,249,0.55);
-    box-shadow: 0 2px 14px rgba(55,68,95,0.07), 0 1px 0 rgba(255,255,255,0.85) inset;
+    background: rgba(255,255,254,0.82);
+    box-shadow: 0 3px 18px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.95) inset;
   }
   .tool-card.learn:hover {
     background: rgba(255,255,254,0.75);
     box-shadow: 0 8px 28px rgba(55,68,95,0.12), 0 1px 0 rgba(255,255,255,0.95) inset;
   }
   .tool-icon { font-size: 1.6rem; }
-  .tool-name { font-family: var(--serif); font-size: 1.06rem; font-weight: 400; color: var(--ink); }
+  .tool-name { font-family: var(--serif); font-size: 1.1rem; font-weight: 500; color: #12151C; }
   .tool-desc { font-size: 0.76rem; font-weight: 300; color: var(--ink-muted); line-height: 1.5; }
 
   /* ── TWO COLUMNS ── */
