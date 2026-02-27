@@ -219,14 +219,20 @@ const CSS = `
 
   /* ── SECTION LABEL ── */
   .section-label {
-    font-size: 0.66rem; font-weight: 400; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 12px;
+    font-size: 0.68rem; font-weight: 500; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-soft); margin-bottom: 14px;
+  }
+  .section-label.urgent {
+    color: #6B4A30;
+  }
+  .section-label.calm {
+    color: #2E3D5C;
   }
 
   /* ── CARDS ── */
   .card {
-    background: rgba(255,255,254,0.90);
-    border: 1px solid rgba(255,255,255,0.88);
+    background: rgba(255,255,254,0.93);
+    border: 1px solid rgba(255,255,255,0.90);
     border-radius: var(--radius-lg);
     box-shadow: var(--card-shadow);
     padding: 22px 24px;
@@ -412,24 +418,30 @@ const CSS = `
   }
   /* Hot tools — slightly elevated/brighter to signal urgency */
   .tool-card.hot {
-    background: rgba(255,255,255,0.96);
-    box-shadow: 0 5px 28px rgba(55,68,95,0.15), 0 1px 0 rgba(255,255,255,1) inset;
+    background: rgba(255,253,249,0.97);
+    border-color: rgba(255,245,235,0.95);
+    box-shadow: 0 6px 32px rgba(80,60,40,0.13), 0 1px 0 rgba(255,255,255,1) inset;
   }
   .tool-card.hot:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 40px rgba(55,68,95,0.17), 0 1px 0 rgba(255,255,255,1) inset;
+    transform: translateY(-4px);
+    background: rgba(255,252,246,0.99);
+    box-shadow: 0 14px 44px rgba(80,60,40,0.18), 0 1px 0 rgba(255,255,255,1) inset;
   }
   /* Learn tools — slightly recessed/tonal to signal reflection */
   .tool-card.learn {
-    background: rgba(255,255,254,0.82);
-    box-shadow: 0 3px 18px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.95) inset;
+    background: rgba(248,250,253,0.88);
+    border-color: rgba(230,238,248,0.85);
+    box-shadow: 0 3px 16px rgba(55,68,95,0.08), 0 1px 0 rgba(255,255,255,0.90) inset;
   }
   .tool-card.learn:hover {
-    background: rgba(255,255,254,0.75);
-    box-shadow: 0 8px 28px rgba(55,68,95,0.12), 0 1px 0 rgba(255,255,255,0.95) inset;
+    transform: translateY(-2px);
+    background: rgba(245,249,255,0.95);
+    box-shadow: 0 8px 28px rgba(55,68,95,0.11), 0 1px 0 rgba(255,255,255,0.95) inset;
   }
   .tool-icon { font-size: 1.6rem; }
   .tool-name { font-family: var(--serif); font-size: 1.1rem; font-weight: 500; color: #12151C; }
+  .tool-card.learn .tool-name { color: #1E2640; }
+  .tool-card.learn .tool-desc { color: var(--ink-muted); }
   .tool-desc { font-size: 0.76rem; font-weight: 300; color: var(--ink-muted); line-height: 1.5; }
 
   /* ── TWO COLUMNS ── */
@@ -2494,7 +2506,7 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
 
         {/* Heat tools */}
         <div className="fade-up delay-2">
-          <div className="section-label">Something is happening right now</div>
+          <div className="section-label urgent">Something is happening right now</div>
           <div className="tools-grid">
             <div className="tool-card hot" onClick={() => onNavigate("escalate")}>
               <span className="tool-icon">🔥</span>
@@ -2516,7 +2528,7 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
 
         {/* Learn tools */}
         <div className="fade-up delay-3">
-          <div className="section-label">Understand & prevent</div>
+          <div className="section-label calm">Understand & prevent</div>
           <div className="tools-grid">
             <div className="tool-card learn" onClick={() => onNavigate("learn")}>
               <span className="tool-icon">🏗️</span>
