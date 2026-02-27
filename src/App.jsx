@@ -30,9 +30,9 @@ const CSS = `
   :root {
     --ink:        #1E2128;
     --ink-soft:   #363C48;
-    --ink-mid:    #5A6070;
-    --ink-muted:  #7A8094;
-    --ink-faint:  #AAB0C0;
+    --ink-mid:    #464C5C;
+    --ink-muted:  #555C6C;
+    --ink-faint:  #6B7280;
 
     --surface:    rgba(252, 251, 249, 0.72);
     --surface-md: rgba(252, 251, 249, 0.58);
@@ -43,7 +43,7 @@ const CSS = `
     --card-shadow:  0 2px 20px rgba(80,95,120,0.09), 0 1px 0 rgba(255,255,255,0.92) inset;
     --card-shadow-hover: 0 8px 32px rgba(80,95,120,0.14), 0 1px 0 rgba(255,255,255,0.96) inset;
 
-    --accent-sage:  #7A9E8E;
+    --accent-sage:  #3D7A68;
     --accent-blush: #C49A8A;
     --accent-plum:  #8A849E;
     --accent-gold:  #B8995A;
@@ -127,8 +127,8 @@ const CSS = `
 
   .nav-link {
     display: flex; align-items: center; gap: 11px;
-    padding: 11px 14px; border-radius: var(--radius-sm);
-    cursor: pointer; border: 1px solid transparent;
+    padding: 13px 14px; border-radius: var(--radius-sm);
+    cursor: pointer; border: 1px solid transparent; min-height: 44px;
     transition: all 0.18s; text-decoration: none;
     background: transparent;
     font-family: var(--sans);
@@ -140,7 +140,7 @@ const CSS = `
     box-shadow: 0 2px 14px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.9) inset;
   }
   .nav-icon { font-size: 0.9rem; color: var(--ink-muted); width: 17px; text-align: center; }
-  .nav-label { font-size: 0.78rem; font-weight: 300; color: var(--ink-mid); letter-spacing: 0.01em; }
+  .nav-label { font-size: 0.82rem; font-weight: 300; color: var(--ink-mid); letter-spacing: 0.01em; }
   .nav-link.active .nav-icon { color: var(--ink); }
   .nav-link.active .nav-label { color: var(--ink); font-weight: 500; }
 
@@ -190,7 +190,7 @@ const CSS = `
 
   /* ── TYPOGRAPHY ── */
   .eyebrow {
-    font-size: 0.56rem; font-weight: 300; letter-spacing: 0.18em;
+    font-size: 0.66rem; font-weight: 400; letter-spacing: 0.16em;
     text-transform: uppercase; color: var(--ink-muted); margin-bottom: 8px;
   }
   .heading {
@@ -210,17 +210,17 @@ const CSS = `
     font-style: italic; color: var(--ink-muted);
   }
   .body-text {
-    font-size: 0.82rem; font-weight: 300; color: var(--ink-soft);
-    line-height: 1.65;
+    font-size: 0.92rem; font-weight: 300; color: var(--ink-soft);
+    line-height: 1.7;
   }
   .caption-text {
-    font-size: 0.68rem; font-weight: 300; color: var(--ink-muted); line-height: 1.5;
+    font-size: 0.76rem; font-weight: 300; color: var(--ink-muted); line-height: 1.55;
   }
 
   /* ── SECTION LABEL ── */
   .section-label {
-    font-size: 0.54rem; font-weight: 400; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 11px;
+    font-size: 0.66rem; font-weight: 400; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 12px;
   }
 
   /* ── CARDS ── */
@@ -324,8 +324,25 @@ const CSS = `
     box-shadow: 0 1px 4px rgba(80,95,120,0.06), 0 1px 0 rgba(255,255,255,0.8) inset;
   }
   .field input:focus, .field textarea:focus, .field select:focus {
-    border-color: rgba(255,255,255,0.85);
-    box-shadow: 0 0 0 3px rgba(80,95,120,0.08), 0 1px 0 rgba(255,255,255,0.9) inset;
+    border-color: rgba(30,33,40,0.55);
+    box-shadow: 0 0 0 3px rgba(30,33,40,0.12), 0 1px 0 rgba(255,255,255,0.9) inset;
+    outline: none;
+  }
+
+  /* ── GLOBAL FOCUS — keyboard navigation ── */
+  :focus-visible {
+    outline: 2.5px solid rgba(30,33,40,0.70);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .btn:focus-visible, .nav-link:focus-visible, .pill:focus-visible, .tool-card:focus-visible, .script-card:focus-visible {
+    outline: 2.5px solid var(--ink);
+    outline-offset: 3px;
+  }
+  .back-btn:focus-visible {
+    outline: 2px solid var(--ink-muted);
+    outline-offset: 4px;
+    border-radius: 6px;
   }
   .field textarea { resize: vertical; min-height: 96px; line-height: 1.6; }
   .field select {
@@ -347,7 +364,7 @@ const CSS = `
     border-radius: 2px; outline: none; cursor: pointer;
   }
   .slider-wrap input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+    -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%;
     background: rgba(252,251,249,0.95); border: 2px solid var(--ink);
     box-shadow: 0 2px 8px rgba(30,33,40,0.16); cursor: pointer;
   }
@@ -357,9 +374,9 @@ const CSS = `
   .pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }
   .pill {
     background: var(--surface-sm); border: 1px solid var(--stroke-sm);
-    border-radius: 100px; padding: 7px 14px;
-    font-size: 0.72rem; font-weight: 300; color: var(--ink-mid);
-    cursor: pointer; transition: all 0.15s; font-family: var(--sans);
+    border-radius: 100px; padding: 10px 16px;
+    font-size: 0.74rem; font-weight: 300; color: var(--ink-mid);
+    cursor: pointer; transition: all 0.15s; font-family: var(--sans); min-height: 44px; display: inline-flex; align-items: center;
   }
   .pill:hover { background: var(--surface-md); }
   .pill.active { background: var(--ink); border-color: var(--ink); color: rgba(252,251,249,0.95); }
@@ -388,6 +405,11 @@ const CSS = `
     background: rgba(255,255,254,0.88);
     box-shadow: 0 10px 36px rgba(55,68,95,0.15), 0 1px 0 rgba(255,255,255,1) inset;
   }
+  .tool-card:active {
+    transform: translateY(0px) scale(0.98);
+    box-shadow: 0 2px 10px rgba(55,68,95,0.10), 0 1px 0 rgba(255,255,255,0.9) inset;
+    transition: all 0.08s;
+  }
   /* Hot tools — slightly elevated/brighter to signal urgency */
   .tool-card.hot {
     background: rgba(255,255,254,0.82);
@@ -406,9 +428,9 @@ const CSS = `
     background: rgba(255,255,254,0.75);
     box-shadow: 0 8px 28px rgba(55,68,95,0.12), 0 1px 0 rgba(255,255,255,0.95) inset;
   }
-  .tool-icon { font-size: 1.4rem; }
-  .tool-name { font-family: var(--serif); font-size: 1.02rem; font-weight: 400; color: var(--ink); }
-  .tool-desc { font-size: 0.65rem; font-weight: 300; color: var(--ink-muted); line-height: 1.45; }
+  .tool-icon { font-size: 1.6rem; }
+  .tool-name { font-family: var(--serif); font-size: 1.06rem; font-weight: 400; color: var(--ink); }
+  .tool-desc { font-size: 0.76rem; font-weight: 300; color: var(--ink-muted); line-height: 1.5; }
 
   /* ── TWO COLUMNS ── */
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -513,7 +535,7 @@ const CSS = `
 
   /* ── TOP BAR (sub-screens) ── */
   .top-bar { display: flex; align-items: center; justify-content: space-between; padding: 20px 44px 0; }
-  .back-btn { background: none; border: none; cursor: pointer; font-family: var(--sans); font-size: 0.76rem; font-weight: 300; color: var(--ink-muted); display: flex; align-items: center; gap: 5px; padding: 4px 0; transition: color 0.18s; }
+  .back-btn { background: none; border: none; cursor: pointer; font-family: var(--sans); font-size: 0.82rem; font-weight: 300; color: var(--ink-muted); display: flex; align-items: center; gap: 5px; padding: 10px 0; min-height: 44px; transition: color 0.18s; }
   .back-btn:hover { color: var(--ink); }
 
   /* ── RESPONSIVE ── */
@@ -1071,7 +1093,7 @@ function DashboardScreen({ partner, setup, logs, glimmers, partnerData, onNaviga
                 {last.note && <div className="act-note">"{last.note}"</div>}
               </>
             ) : (
-              <p className="body-text" style={{ color: "var(--ink-faint)" }}>No logs yet.</p>
+              <p className="body-text" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>Nothing logged yet — use Escalating or Regulate to track your first session.</p>
             )}
           </div>
 
@@ -1085,7 +1107,7 @@ function DashboardScreen({ partner, setup, logs, glimmers, partnerData, onNaviga
                 <span className="g-date">{fmtDate(g.created_at)}</span>
               </div>
             )) : (
-              <p className="body-text" style={{ color: "var(--ink-faint)" }}>No glimmers yet.</p>
+              <p className="body-text" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>No glimmers yet — add something good that happened between you two.</p>
             )}
             <button className="btn btn-ghost" onClick={() => handleNav("glimmer")} style={{ marginTop: 14, width: "100%" }}>
               + Add a glimmer ✦
@@ -2529,7 +2551,7 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
                 </div>
                 {last.note && <div className="act-note">"{last.note}"</div>}
               </>
-            ) : <p className="body-text" style={{ color: "var(--ink-faint)" }}>No logs yet.</p>}
+            ) : <p className="body-text" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>Nothing logged yet — use Escalating or Regulate to track your first session.</p>}
           </div>
 
           <div className="card-bright">
@@ -2540,7 +2562,7 @@ function DashboardWithLearn({ partner, setup, logs, glimmers, partnerData, onNav
                 <span className="g-text">{g.text}</span>
                 <span className="g-date">{fmtDate(g.created_at)}</span>
               </div>
-            )) : <p className="body-text" style={{ color: "var(--ink-faint)" }}>No glimmers yet.</p>}
+            )) : <p className="body-text" style={{ color: "var(--ink-faint)", fontStyle: "italic" }}>No glimmers yet — add something good that happened between you two.</p>}
             <button className="btn btn-ghost" onClick={() => onNavigate("glimmer")} style={{ marginTop: 14, width: "100%" }}>+ Add a glimmer ✦</button>
           </div>
         </div>
